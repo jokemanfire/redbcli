@@ -1,28 +1,24 @@
+use clap::{Parser, Subcommand, Args};
+use redbcli::redbcontrol::{CommonDbInterface, CommonDbManager};
 use std::io::Write;
-use redbcli::redbcontrol::{CommonDbManager, CommonDbInterface};
-use clap::{Parser, Subcommand};
-
 
 #[derive(Default)]
-pub struct CliStatus{
-    tablename:String,
-    filepath:String,
-    dbm:CommonDbManager,
+pub struct CliStatus {
+    tablename: String,
+    filepath: String,
+    dbm: CommonDbManager,
 }
-
-
 
 fn main() -> Result<(), String> {
     let mut clistatus = CliStatus::default();
     loop {
-       
         let line = readline()?;
         let line = line.trim();
         if line.is_empty() {
             continue;
         }
 
-        match respond(line,&mut clistatus) {
+        match respond(line, &mut clistatus) {
             Ok(quit) => {
                 if quit {
                     break;
@@ -38,44 +34,61 @@ fn main() -> Result<(), String> {
     Ok(())
 }
 
-fn write_io(data:String)->Result<(),String>{
-    write!(std::io::stdout(), "{}", format!("-> {} \n",data)).map_err(|e| e.to_string())?;
+fn write_io(data: String) -> Result<(), String> {
+    write!(std::io::stdout(), "{}", format!("-> {} \n", data)).map_err(|e| e.to_string())?;
     std::io::stdout().flush().map_err(|e| e.to_string())?;
     Ok(())
 }
 
-fn respond(line: &str,status:&mut CliStatus) -> Result<bool, String> {
+fn respond(line: &str, status: &mut CliStatus) -> Result<bool, String> {
     let args = shlex::split(line).ok_or("error: Invalid quoting")?;
     let cli = Cli::try_parse_from(args).map_err(|e| e.to_string())?;
     match cli.command {
-        Commands::Set { filepath }=>{
-            status.dbm.setdbpath(filepath.clone()).map_err(|e|e.to_string())?;
+        Commands::Set { filepath } => {
+            status
+                .dbm
+                .setdbpath(filepath.clone())
+                .map_err(|e| e.to_string())?;
             write_io(format!("set database success!"))?;
             status.filepath = filepath;
         }
 
-        Commands::Use{tablename} => {
-            if status.filepath.is_empty(){
+        Commands::Use { tablename } => {
+            if status.filepath.is_empty() {
                 write_io(format!("you must set file path first !!"))?;
                 return Ok(false);
             }
             status.tablename = tablename.clone();
             status.dbm.settablename(tablename.clone());
-            write_io(format!("Use table {}",tablename))?;
+            write_io(format!("Use table {}", tablename))?;
         }
-        Commands::Info {key}=> {
-            if status.tablename.is_empty(){
-                write_io(format!("you must use table to select !!"))?;
-                return Ok(false);
+        Commands::Info (subcmd) => {
+            let sub_cmd = subcmd.command.unwrap_or(InfoCommands::Tables);
+            match sub_cmd{
+                InfoCommands::Tables => {
+                    let result = status.dbm.gettables().map_err(|e| e.to_string())?;
+                    write_io(format!("data \n{:?}", result))?;
+                    return Ok(false);
+                },
+                InfoCommands::K { key } =>{
+                    if status.tablename.is_empty() {
+                            write_io(format!("you must use table to select !!"))?;
+                            return Ok(false);
+                        }
+                         let result = status
+                        .dbm
+                        .common_get_by_key(key)
+                        .map_err(|e| e.to_string())?;
+                    write_io(format!("data \n{}", result))?;
+                },
+                InfoCommands::T { tablename } => {
+                    status.tablename = tablename.clone();
+                    status.dbm.settablename(tablename.clone());
+                    let result = status.dbm.common_get_all().map_err(|e| e.to_string())?;
+                        write_io(format!("data \n{}", result))?;
+                        return Ok(false);
+                },
             }
-            if key == "*".to_string(){
-                let result = status.dbm.common_get_all().map_err(|e| e.to_string())?;
-                write_io(format!("data \n{}",result))?;
-                return Ok(false);
-            }
-            let result = status.dbm.common_get_by_key(key).map_err(|e| e.to_string())?;
-            write_io(format!("data \n{}",result))?;
-           
         }
         Commands::Exit => {
             write_io("Exiting ... \n".to_string())?;
@@ -95,23 +108,41 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Commands {
     #[command(arg_required_else_help = true)]
-    Set{
-        filepath:String
-    },
-
-    #[command(arg_required_else_help = true)]
-    Use{
-        /// choose table
-        tablename:String
+    Set {
+        filepath: String,
     },
     #[command(arg_required_else_help = false)]
-    Info {
-        /// key
-        key:String
+    Use {
+        tablename:String,
     },
+
+    #[command(arg_required_else_help = false)]
+    Info(InfoArgs),
     Exit,
 }
 
+#[derive(Debug, Args)]
+#[command(args_conflicts_with_subcommands = true)]
+#[command(flatten_help = true)]
+struct InfoArgs{
+    #[command(subcommand)]
+    command: Option<InfoCommands>,
+}
+
+#[derive(Debug, Subcommand)]
+enum InfoCommands{
+    //show all tables
+    Tables,
+    //show key
+    K{
+        key:String,
+    },
+    //show table data
+    T{
+        tablename:String
+    }
+
+}
 fn readline() -> Result<String, String> {
     write!(std::io::stdout(), "$ ").map_err(|e| e.to_string())?;
     std::io::stdout().flush().map_err(|e| e.to_string())?;
