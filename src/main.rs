@@ -58,8 +58,8 @@ fn respond(line: &str, status: &mut CliStatus) -> Result<bool, String> {
                 write_io(format!("you must set file path first !!"))?;
                 return Ok(false);
             }
+            status.dbm.settablename(tablename.clone()).map_err(|e|e.to_string())?;
             status.tablename = tablename.clone();
-            status.dbm.settablename(tablename.clone());
             write_io(format!("Use table {}", tablename))?;
         }
         Commands::Info (subcmd) => {
@@ -83,7 +83,7 @@ fn respond(line: &str, status: &mut CliStatus) -> Result<bool, String> {
                 },
                 InfoCommands::T { tablename } => {
                     status.tablename = tablename.clone();
-                    status.dbm.settablename(tablename.clone());
+                    status.dbm.settablename(tablename.clone()).map_err(|e| e.to_string())?;
                     let result = status.dbm.common_get_all().map_err(|e| e.to_string())?;
                         write_io(format!("data \n{}", result))?;
                         return Ok(false);
@@ -108,15 +108,19 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Commands {
     #[command(arg_required_else_help = true)]
+    #[command(about = "Set db filepath", long_about = None)]
     Set {
+        ///set file path
         filepath: String,
     },
     #[command(arg_required_else_help = false)]
+    #[command(about = "use db table name", long_about = None)]
     Use {
         tablename:String,
     },
 
     #[command(arg_required_else_help = false)]
+    #[command(about = "info db data", long_about = None)]
     Info(InfoArgs),
     Exit,
 }
@@ -132,12 +136,15 @@ struct InfoArgs{
 #[derive(Debug, Subcommand)]
 enum InfoCommands{
     //show all tables
+    #[command(about = "show all table name ", long_about = None)]
     Tables,
     //show key
+    #[command(about = "use key get data", long_about = None)]
     K{
         key:String,
     },
     //show table data
+    #[command(about = "get table data", long_about = None)]
     T{
         tablename:String
     }

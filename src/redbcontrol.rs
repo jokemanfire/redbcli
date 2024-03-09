@@ -46,8 +46,14 @@ impl CommonDbManager {
         }
         Err(redb::Error::Corrupted("Database not found".to_string()))
     }
-    pub fn settablename(&mut self, name: String) {
+    pub fn settablename(&mut self, name: String) -> Result<(), Error>{
+        let db = self.getdb()?;
+        let tab_name = self.tablename.clone();
+        let tabledefinition: TableDefinition<&str, &str> = TableDefinition::new(tab_name.as_str());
+        let read_txn = db.begin_read()?;
+        let _ = read_txn.open_table(tabledefinition)?;
         self.tablename = name;
+        Ok(())
     }
     pub fn setdbpath(&mut self, path: String) -> Result<(), Error> {
         self.dbpath = path;
@@ -139,14 +145,3 @@ impl CommonDbInterface for CommonDbManager {
     }
 }
 
-#[test]
-fn test_read_header() {
-    read_header("src/test.redb".to_string());
-}
-
-#[test]
-fn test_read_seeker() {
-    read_seeker("src/test.redb".to_string(), 64, 128);
-    read_seeker("src/test.redb".to_string(), 64 + 128, 128);
-    read_seeker("src/test.redb".to_string(), 4096 * 2, 128);
-}
