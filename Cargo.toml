@@ -2,8 +2,16 @@
 name = "redbcli"
 version = "0.1.0"
 edition = "2021"
-
+authors = ["jokemanfire <hu.dingyang@zte.com.cn>"]
+description = "redbcli"
+keywords = ["redb", "cli","Developer Tools"]
+repository = "https://github.com/jokemanfire/redbcli"
+license = "MIT/Apache-2.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+include = [
+    "**/*.rs",
+    "Cargo.toml",
+]
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }

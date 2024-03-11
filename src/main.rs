@@ -70,7 +70,7 @@ fn respond(line: &str, status: &mut CliStatus) -> Result<bool, String> {
                     write_io(format!("data \n{:?}", result))?;
                     return Ok(false);
                 },
-                InfoCommands::K { key } =>{
+                InfoCommands::Key { key } =>{
                     if status.tablename.is_empty() {
                             write_io(format!("you must use table to select !!"))?;
                             return Ok(false);
@@ -81,7 +81,7 @@ fn respond(line: &str, status: &mut CliStatus) -> Result<bool, String> {
                         .map_err(|e| e.to_string())?;
                     write_io(format!("data \n{}", result))?;
                 },
-                InfoCommands::T { tablename } => {
+                InfoCommands::Table { tablename } => {
                     status.tablename = tablename.clone();
                     status.dbm.settablename(tablename.clone()).map_err(|e| e.to_string())?;
                     let result = status.dbm.common_get_all().map_err(|e| e.to_string())?;
@@ -108,19 +108,19 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Commands {
     #[command(arg_required_else_help = true)]
-    #[command(about = "Set db filepath", long_about = None)]
+    #[command(about = "Set db filepath  ex: set '/home/test.redb'", long_about = None)]
     Set {
         ///set file path
         filepath: String,
     },
     #[command(arg_required_else_help = false)]
-    #[command(about = "use db table name", long_about = None)]
+    #[command(about = "use db table name    ex : 'use $tablename'", long_about = None)]
     Use {
         tablename:String,
     },
 
     #[command(arg_required_else_help = false)]
-    #[command(about = "info db data", long_about = None)]
+    #[command(about = "info db data ex :'help show'", long_about = None)]
     Info(InfoArgs),
     Exit,
 }
@@ -139,13 +139,13 @@ enum InfoCommands{
     #[command(about = "show all table name ", long_about = None)]
     Tables,
     //show key
-    #[command(about = "use key get data", long_about = None)]
-    K{
+    #[command(short_flag='k',about = "use key get data", long_about = None)]
+    Key{
         key:String,
     },
     //show table data
-    #[command(about = "get table data", long_about = None)]
-    T{
+    #[command(short_flag= 't',about = "get table data", long_about = None)]
+    Table{
         tablename:String
     }
 

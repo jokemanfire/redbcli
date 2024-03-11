@@ -11,6 +11,7 @@ $ set {filepath}
 -> set database success! 
 $ use {table}
 -> Use table {table}
-$ info *                 //info key
+$ info tables                //info tables
+
 
 ```
