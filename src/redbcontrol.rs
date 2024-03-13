@@ -48,11 +48,11 @@ impl CommonDbManager {
     }
     pub fn settablename(&mut self, name: String) -> Result<(), Error>{
         let db = self.getdb()?;
+        self.tablename = name.clone();
         let tab_name = self.tablename.clone();
         let tabledefinition: TableDefinition<&str, &str> = TableDefinition::new(tab_name.as_str());
         let read_txn = db.begin_read()?;
         let _ = read_txn.open_table(tabledefinition)?;
-        self.tablename = name;
         Ok(())
     }
     pub fn setdbpath(&mut self, path: String) -> Result<(), Error> {
