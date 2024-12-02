@@ -4,13 +4,11 @@ use redb::TableHandle;
 use redb::{Database, Error};
 use std::path::Path;
 
-
 #[derive(Debug, Default)]
 pub struct CommonDbManager {
-    pub(crate) tablename: String,
+    pub tablename: String,
     dbpath: String,
 }
-
 
 pub trait CommonDbInterface {
     fn common_get_by_key(&self, key: String) -> Result<String, Error>;
@@ -28,7 +26,7 @@ impl CommonDbManager {
         }
         Err(redb::Error::Corrupted("Database not found".to_string()))
     }
-    pub fn settablename(&mut self, name: String) -> Result<(), Error>{
+    pub fn settablename(&mut self, name: String) -> Result<(), Error> {
         let db = self.getdb()?;
         self.tablename = name.clone();
         let tab_name = self.tablename.clone();
@@ -43,13 +41,12 @@ impl CommonDbManager {
         Ok(())
     }
 
-    pub fn gettables(&self) -> Result<Vec<String>,Error>
-    {
+    pub fn gettables(&self) -> Result<Vec<String>, Error> {
         let mut result = Vec::new();
         let db = self.getdb()?;
         let read_txn = db.begin_read()?;
         let mut x = read_txn.list_tables().unwrap();
-        
+
         while let Some(item) = x.next() {
             result.push(item.name().to_string());
         }
@@ -126,4 +123,3 @@ impl CommonDbInterface for CommonDbManager {
         Err(redb::Error::Corrupted("Database not found".to_string()))
     }
 }
-
