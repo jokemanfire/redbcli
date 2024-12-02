@@ -48,13 +48,13 @@ fn respond(line: &str, status: &mut CliStatus) -> Result<bool, String> {
                 .dbm
                 .setdbpath(filepath.clone())
                 .map_err(|e| e.to_string())?;
-            write_io(format!("set database success!"))?;
+            write_io("set database success!".to_string())?;
             status.filepath = filepath;
         }
 
         Commands::Use { tablename } => {
             if status.filepath.is_empty() {
-                write_io(format!("you must set file path first !!"))?;
+                write_io("you must set file path first !!".to_string())?;
                 return Ok(false);
             }
             status.dbm.settablename(tablename.clone()).map_err(|e|e.to_string())?;
@@ -71,7 +71,7 @@ fn respond(line: &str, status: &mut CliStatus) -> Result<bool, String> {
                 },
                 InfoCommands::Key { key } =>{
                     if status.tablename.is_empty() {
-                            write_io(format!("you must use table to select !!"))?;
+                            write_io("you must use table to select !!".to_string())?;
                             return Ok(false);
                         }
                          let result = status

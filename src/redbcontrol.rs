@@ -2,27 +2,9 @@ use redb::ReadableTable;
 use redb::TableDefinition;
 use redb::TableHandle;
 use redb::{Database, Error};
-use std::fs::File;
-use std::io::prelude::*;
-use std::io::SeekFrom;
 use std::path::Path;
 
-fn read_header(path: String) -> Result<(), Error> {
-    let mut file = File::open(path)?;
-    let mut buffer = [0u8; 64];
-    file.read(&mut buffer)?;
-    println!("{:?}", buffer);
-    Ok(())
-}
 
-fn read_seeker(path: String, start_i: u64, lens: u64) -> Result<(), Error> {
-    let mut file = File::open(path)?;
-    file.seek(SeekFrom::Start(start_i))?;
-    let mut buffer = vec![0u8; lens.try_into().unwrap()];
-    file.read(&mut buffer)?;
-    println!("{:?}", buffer);
-    Ok(())
-}
 #[derive(Debug, Default)]
 pub struct CommonDbManager {
     pub(crate) tablename: String,
