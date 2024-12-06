@@ -45,9 +45,8 @@ impl CommonDbManager {
         let mut result = Vec::new();
         let db = self.getdb()?;
         let read_txn = db.begin_read()?;
-        let mut x = read_txn.list_tables().unwrap();
-
-        while let Some(item) = x.next() {
+        let x = read_txn.list_tables().unwrap();
+        for item in x {
             result.push(item.name().to_string());
         }
         Ok(result)

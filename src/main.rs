@@ -4,6 +4,8 @@ use redbcli::{
     flags::{Commands, InfoCommands},
     redbcontrol::{CommonDbInterface, CommonDbManager},
 };
+use rustyline::error::ReadlineError;
+use rustyline::DefaultEditor;
 use std::io::Write;
 #[derive(Default)]
 pub struct CliStatus {
@@ -18,20 +20,38 @@ fn main() -> Result<(), String> {
     if let Some(db_path) = parse_flags.path {
         clistatus.filepath = db_path;
     }
+    let mut rl = DefaultEditor::new().unwrap();
     loop {
-        let line = readline()?;
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        match respond(line, &mut clistatus) {
-            Ok(quit) => {
-                if quit {
-                    break;
+        let prompt = format!(
+            "\nDB:[{}] TAB:[{}] \n>> ",
+            clistatus.filepath, clistatus.tablename
+        );
+        let readline = rl.readline(&prompt);
+        match readline {
+            Ok(line) => {
+                let _ = rl.add_history_entry(line.as_str());
+                match respond(&line, &mut clistatus) {
+                    Ok(quit) => {
+                        if quit {
+                            break;
+                        }
+                    }
+                    Err(err) => {
+                        write_io(err)?;
+                    }
                 }
             }
+            Err(ReadlineError::Interrupted) => {
+                println!("CTRL-C");
+                break;
+            }
+            Err(ReadlineError::Eof) => {
+                println!("CTRL-D");
+                break;
+            }
             Err(err) => {
-                write_io(err)?;
+                println!("Error: {:?}", err);
+                break;
             }
         }
     }
@@ -40,19 +60,10 @@ fn main() -> Result<(), String> {
 }
 
 fn write_io(data: String) -> Result<(), String> {
-    write!(std::io::stdout(), "{}", format!("-> {} \n", data)).map_err(|e| e.to_string())?;
+    let out_data=  format!("-> {} \n", data);
+    write!(std::io::stdout(), "{}", out_data).map_err(|e| e.to_string())?;
     std::io::stdout().flush().map_err(|e| e.to_string())?;
     Ok(())
-}
-
-fn readline() -> Result<String, String> {
-    write!(std::io::stdout(), "$ ").map_err(|e| e.to_string())?;
-    std::io::stdout().flush().map_err(|e| e.to_string())?;
-    let mut buffer = String::new();
-    std::io::stdin()
-        .read_line(&mut buffer)
-        .map_err(|e| e.to_string())?;
-    Ok(buffer)
 }
 
 fn respond(line: &str, status: &mut CliStatus) -> Result<bool, String> {
@@ -84,9 +95,16 @@ fn respond(line: &str, status: &mut CliStatus) -> Result<bool, String> {
             let sub_cmd = subcmd.command.unwrap_or(InfoCommands::Tables);
             match sub_cmd {
                 InfoCommands::Tables => {
-                    let result = status.dbm.gettables().map_err(|e| e.to_string())?;
-                    write_io(format!("data \n{:?}", result))?;
-                    return Ok(false);
+                    if status.tablename.is_empty(){
+                        let result = status.dbm.gettables().map_err(|e| e.to_string())?;
+                        write_io(format!("data \n{:?}", result))?;
+                        return Ok(false);
+                    }else{
+                        let result = status.dbm.common_get_all().map_err(|e| e.to_string())?;
+                        write_io(format!("data \n{}", result))?;
+                        return Ok(false);
+                    }
+           
                 }
                 InfoCommands::Key { key } => {
                     if status.tablename.is_empty() {
