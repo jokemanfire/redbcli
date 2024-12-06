@@ -2,6 +2,7 @@ use redb::ReadableTable;
 use redb::TableDefinition;
 use redb::TableHandle;
 use redb::{Database, Error};
+use std::collections::HashMap;
 use std::path::Path;
 
 #[derive(Debug, Default)]
@@ -13,7 +14,7 @@ pub struct CommonDbManager {
 pub trait CommonDbInterface {
     fn common_get_by_key(&self, key: String) -> Result<String, Error>;
     fn common_insert_by_key(&self, key: String, data: String) -> Result<(), Error>;
-    fn common_get_all(&self) -> Result<String, Error>;
+    fn common_get_all(&self) -> Result<HashMap<String, String>, Error>;
     fn common_remove_by_key(&self, key: String) -> Result<(), Error>;
     fn common_update_by_key(&self, key: String, data: String) -> Result<(), Error>;
 }
@@ -81,19 +82,17 @@ impl CommonDbInterface for CommonDbManager {
         write_txn.commit()?;
         Ok(())
     }
-    fn common_get_all(&self) -> Result<String, Error> {
+    fn common_get_all(&self) -> Result<HashMap<String, String>, Error> {
         let db = self.getdb()?;
         let tab_name = self.tablename.clone();
         let tabledefinition: TableDefinition<&str, &str> = TableDefinition::new(tab_name.as_str());
         let read_txn = db.begin_read()?;
         let table = read_txn.open_table(tabledefinition)?;
         // println!("start get all data....");
-        let mut result = String::new();
+        let mut result = HashMap::new();
         let mut iter = table.range::<&str>(..)?;
         while let Some((k, v)) = iter.next().transpose()? {
-            // let formatted_data = serde_json::to_string_pretty(&v.value()).unwrap();
-            let r = format!("Key: {} \n Value: {}\n \n", k.value(), v.value());
-            result += r.as_str();
+            result.insert(k.value().to_string(), v.value().to_string());
         }
         Ok(result)
     }
