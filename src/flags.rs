@@ -31,6 +31,10 @@ pub enum Commands {
     #[command(arg_required_else_help = false)]
     #[command(about = "info db data ex :'help show'", long_about = None)]
     Info(InfoArgs),
+
+    #[command(short_flag='e',about = "edit table data", long_about = None)]
+    Edit,
+    
     Exit,
 }
 
@@ -51,6 +55,8 @@ pub enum InfoCommands {
     #[command(short_flag='k',about = "use key get data", long_about = None)]
     Key { key: String },
     //show table data
-    #[command(short_flag= 't',about = "get table data", long_about = None)]
+    #[command(short_flag='t',about = "get table data", long_about = None)]
     Table { tablename: String },
+
+
 }

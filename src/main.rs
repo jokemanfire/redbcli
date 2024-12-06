@@ -26,6 +26,7 @@ fn main() -> Result<(), String> {
     let history_path = PathBuf::from("/tmp/redbcli/history");
     if !history_path.exists() {
         std::fs::create_dir_all(&history_path).expect("create history failed");
+        std::fs::OpenOptions::new().create(true).open(&history_path);
     }
     let mut rl = DefaultEditor::new().unwrap();
     if rl.load_history(&history_path).is_err() {
@@ -100,6 +101,34 @@ fn respond(line: &str, status: &mut CliStatus) -> Result<bool, String> {
             status.tablename = tablename.clone();
             write_io(format!("Use table {}", tablename))?;
         }
+        Commands::Edit => {
+            let mut temp_file = tempfile::NamedTempFile::new().unwrap();
+            let result = status.dbm.common_get_all().map_err(|e| e.to_string())?;
+            let json_data = serde_json::to_string(&result).unwrap();
+            temp_file.write_all(json_data.as_bytes()).unwrap();
+
+            let temp_path = temp_file.path().to_str().expect("Invalid path");
+
+            // 调用 vim 编辑器
+            let mut child = std::process::Command::new("vim")
+                .arg(temp_path)
+                .stdin(std::process::Stdio::inherit())
+                .stdout(std::process::Stdio::inherit())
+                .stderr(std::process::Stdio::inherit())
+                .spawn().unwrap();
+
+            // 等待用户完成编辑
+            let status = child.wait().unwrap();
+
+            if !status.success() {
+                eprintln!("Vim exited with an error");
+                return Ok(true);
+            }
+
+            let modified_data = std::fs::read_to_string(temp_path).unwrap();
+            println!("Modified data:\n{}", modified_data);
+        }
+
         Commands::Info(subcmd) => {
             let sub_cmd = subcmd.command.unwrap_or(InfoCommands::Tables);
             match sub_cmd {
@@ -132,6 +161,7 @@ fn respond(line: &str, status: &mut CliStatus) -> Result<bool, String> {
                     KvInfo { kvdatas: result }.print_data();
                     return Ok(false);
                 }
+              
             }
         }
         Commands::Exit => {
