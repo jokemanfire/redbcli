@@ -36,8 +36,15 @@ pub enum Commands {
     Edit,
 
     //todo create table
+    #[command(short_flag='c',about = "Create a table", long_about = None)]
+    Create {
+        tablename: String,
+    },
+    #[command(short_flag='d',about = "Delete a table", long_about = None)]
+    Delete {
+        tablename: String,
+    },
 
-    //todo delete table
     Exit,
 }
 

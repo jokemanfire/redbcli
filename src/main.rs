@@ -1,9 +1,10 @@
 use clap::Parser;
 use redbcli::flags::{Binflags, Cli};
 use redbcli::pretty_print::PrintTable;
+use redbcli::redbcontrol::DealTable;
 use redbcli::{
     flags::{Commands, InfoCommands},
-    redbcontrol::{CommonDbInterface, CommonDbManager},
+    redbcontrol::{CommonDbManager, DealData},
 };
 use redbcli::{KvInfo, TableInfo};
 use rustyline::error::ReadlineError;
@@ -115,7 +116,7 @@ fn respond(line: &str, status: &mut CliStatus) -> Result<bool, String> {
                 return Ok(false);
             }
             let mut temp_file = tempfile::NamedTempFile::new().unwrap();
-            let result = status.dbm.common_get_all().map_err(|e| e.to_string())?;
+            let result = status.dbm.get_all().map_err(|e| e.to_string())?;
             let json_data = serde_json::to_string_pretty(&result).unwrap();
 
             temp_file.write_all(json_data.as_bytes()).unwrap();
@@ -148,14 +149,12 @@ fn respond(line: &str, status: &mut CliStatus) -> Result<bool, String> {
                         return Ok(false);
                     }
                     result.iter().for_each(|(key, _)| {
-                        let _ = status.dbm.common_remove_by_key(key.to_string());
+                        let _ = status.dbm.remove_by_key(key.to_string());
                     });
 
                     println!("Save data to update the database");
                     r_data.iter().for_each(|(key, value)| {
-                        let _ = status
-                            .dbm
-                            .common_update_by_key(key.to_string(), value.to_string());
+                        let _ = status.dbm.update_by_key(key.to_string(), value.to_string());
                     });
                     return Ok(false);
                 }
@@ -171,11 +170,11 @@ fn respond(line: &str, status: &mut CliStatus) -> Result<bool, String> {
             match sub_cmd {
                 InfoCommands::Tables => {
                     if status.tablename.is_empty() {
-                        let result = status.dbm.gettables().map_err(|e| e.to_string())?;
+                        let result = status.dbm.list_table().map_err(|e| e.to_string())?;
                         TableInfo { tablename: result }.print_data();
                         return Ok(false);
                     } else {
-                        let result = status.dbm.common_get_all().map_err(|e| e.to_string())?;
+                        let result = status.dbm.get_all().map_err(|e| e.to_string())?;
                         KvInfo { kvdatas: result }.print_data();
                         return Ok(false);
                     }
@@ -185,19 +184,25 @@ fn respond(line: &str, status: &mut CliStatus) -> Result<bool, String> {
                         write_io("you must use table to select !!".to_string())?;
                         return Ok(false);
                     }
-                    let result = status
-                        .dbm
-                        .common_get_by_key(key)
-                        .map_err(|e| e.to_string())?;
+                    let result = status.dbm.get_by_key(key).map_err(|e| e.to_string())?;
                     write_io(format!("data \n{}", result))?;
                 }
                 InfoCommands::Table { tablename } => {
                     status.tablename = tablename.clone();
-                    let result = status.dbm.common_get_all().map_err(|e| e.to_string())?;
+                    let result = status.dbm.get_all().map_err(|e| e.to_string())?;
                     KvInfo { kvdatas: result }.print_data();
                     return Ok(false);
                 }
             }
+        }
+
+        Commands::Create { tablename } => {
+            let _ = status.dbm.create_table(tablename);
+            return Ok(false);
+        }
+        Commands::Delete { tablename } => {
+            let _ = status.dbm.delete_table(tablename);
+            return Ok(false);
         }
         Commands::Exit => {
             write_io("Exiting ... \n".to_string())?;
