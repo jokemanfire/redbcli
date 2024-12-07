@@ -8,6 +8,7 @@ use redbcli::{
 use redbcli::{KvInfo, TableInfo};
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
+use std::collections::HashMap;
 use std::io::Write;
 use std::path::PathBuf;
 #[derive(Default)]
@@ -23,13 +24,20 @@ fn main() -> Result<(), String> {
     if let Some(db_path) = parse_flags.path {
         clistatus.filepath = db_path;
     }
-    let history_path = PathBuf::from("/tmp/redbcli/history");
+    let history_path = PathBuf::from("/tmp/redbcli");
     if !history_path.exists() {
-        std::fs::create_dir_all(&history_path).expect("create history failed");
-        std::fs::OpenOptions::new().create(true).open(&history_path);
+        std::fs::create_dir_all(&history_path).expect("create history dir failed");
     }
+    let file_history = history_path.join("history.txt");
+    //check history file
+    {
+        if !file_history.exists() {
+            std::fs::File::create(&file_history).expect("create history file failed");
+        }
+    }
+
     let mut rl = DefaultEditor::new().unwrap();
-    if rl.load_history(&history_path).is_err() {
+    if rl.load_history(&file_history).is_err() {
         println!("No previous history.");
     }
     loop {
@@ -38,7 +46,7 @@ fn main() -> Result<(), String> {
             clistatus.filepath, clistatus.tablename
         );
         let readline = rl.readline(&prompt);
-        let _ = rl.save_history(&history_path);
+
         match readline {
             Ok(line) => {
                 let _ = rl.add_history_entry(line.as_str());
@@ -67,7 +75,7 @@ fn main() -> Result<(), String> {
             }
         }
     }
-
+    let _ = rl.save_history(&file_history);
     Ok(())
 }
 
@@ -102,31 +110,60 @@ fn respond(line: &str, status: &mut CliStatus) -> Result<bool, String> {
             write_io(format!("Use table {}", tablename))?;
         }
         Commands::Edit => {
+            if status.tablename.is_empty() {
+                write_io("you must set table first !!".to_string())?;
+                return Ok(false);
+            }
             let mut temp_file = tempfile::NamedTempFile::new().unwrap();
             let result = status.dbm.common_get_all().map_err(|e| e.to_string())?;
-            let json_data = serde_json::to_string(&result).unwrap();
+            let json_data = serde_json::to_string_pretty(&result).unwrap();
+
             temp_file.write_all(json_data.as_bytes()).unwrap();
 
             let temp_path = temp_file.path().to_str().expect("Invalid path");
 
-            // 调用 vim 编辑器
             let mut child = std::process::Command::new("vim")
                 .arg(temp_path)
+                .arg("+syntax on")
+                .arg("+set number")
+                .arg("+set filetype=json")
                 .stdin(std::process::Stdio::inherit())
                 .stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
-                .spawn().unwrap();
+                .spawn()
+                .unwrap();
 
-            // 等待用户完成编辑
-            let status = child.wait().unwrap();
+            let vim_status = child.wait().unwrap();
 
-            if !status.success() {
+            if !vim_status.success() {
                 eprintln!("Vim exited with an error");
                 return Ok(true);
             }
 
             let modified_data = std::fs::read_to_string(temp_path).unwrap();
-            println!("Modified data:\n{}", modified_data);
+            match serde_json::from_str::<HashMap<String, String>>(&modified_data) {
+                Ok(r_data) => {
+                    if modified_data == json_data {
+                        println!("No changed!");
+                        return Ok(false);
+                    }
+                    result.iter().for_each(|(key, _)| {
+                        let _ = status.dbm.common_remove_by_key(key.to_string());
+                    });
+
+                    println!("Save data to update the database");
+                    r_data.iter().for_each(|(key, value)| {
+                        let _ = status
+                            .dbm
+                            .common_update_by_key(key.to_string(), value.to_string());
+                    });
+                    return Ok(false);
+                }
+                Err(_) => {
+                    println!("This is not a valid json str");
+                    return Ok(false);
+                }
+            };
         }
 
         Commands::Info(subcmd) => {
@@ -136,7 +173,6 @@ fn respond(line: &str, status: &mut CliStatus) -> Result<bool, String> {
                     if status.tablename.is_empty() {
                         let result = status.dbm.gettables().map_err(|e| e.to_string())?;
                         TableInfo { tablename: result }.print_data();
-                        // write_io(format!("data \n{:?}", result))?;
                         return Ok(false);
                     } else {
                         let result = status.dbm.common_get_all().map_err(|e| e.to_string())?;
@@ -161,7 +197,6 @@ fn respond(line: &str, status: &mut CliStatus) -> Result<bool, String> {
                     KvInfo { kvdatas: result }.print_data();
                     return Ok(false);
                 }
-              
             }
         }
         Commands::Exit => {

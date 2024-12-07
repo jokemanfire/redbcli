@@ -8,7 +8,7 @@ use std::path::Path;
 #[derive(Debug, Default)]
 pub struct CommonDbManager {
     pub tablename: String,
-    dbpath: String,
+    pub dbpath: String,
 }
 
 pub trait CommonDbInterface {

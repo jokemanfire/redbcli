@@ -34,7 +34,10 @@ pub enum Commands {
 
     #[command(short_flag='e',about = "edit table data", long_about = None)]
     Edit,
-    
+
+    //todo create table
+
+    //todo delete table
     Exit,
 }
 
@@ -57,6 +60,4 @@ pub enum InfoCommands {
     //show table data
     #[command(short_flag='t',about = "get table data", long_about = None)]
     Table { tablename: String },
-
-
 }
