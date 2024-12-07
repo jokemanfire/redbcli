@@ -199,19 +199,22 @@ fn respond(line: &str, status: &mut CliStatus) -> Result<bool, String> {
 
         Commands::Create { tablename } => {
             let _ = status.dbm.create_table(tablename);
+            write_io("create table success".to_string())?;
             return Ok(false);
         }
         Commands::Delete { tablename } => {
             let _ = status.dbm.delete_table(tablename);
+            write_io("delete table success".to_string())?;
+            return Ok(false);
+        }
+        Commands::New { databasename } => {
+            let _ = Database::create(databasename);
+            write_io("create database success".to_string())?;
             return Ok(false);
         }
         Commands::Exit => {
             write_io("Exiting ... \n".to_string())?;
             return Ok(true);
-        }
-        Commands::New { databasename } => {
-            let _ = Database::create(databasename);
-            return Ok(false);
         }
     }
     Ok(false)
