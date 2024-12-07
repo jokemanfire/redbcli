@@ -45,6 +45,10 @@ pub enum Commands {
         tablename: String,
     },
 
+    #[command(short_flag='n',about = "Create a database", long_about = None)]
+    New {
+        databasename: String,
+    },
     Exit,
 }
 

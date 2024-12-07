@@ -1,4 +1,5 @@
 use clap::Parser;
+use redb::Database;
 use redbcli::flags::{Binflags, Cli};
 use redbcli::pretty_print::PrintTable;
 use redbcli::redbcontrol::DealTable;
@@ -207,6 +208,10 @@ fn respond(line: &str, status: &mut CliStatus) -> Result<bool, String> {
         Commands::Exit => {
             write_io("Exiting ... \n".to_string())?;
             return Ok(true);
+        }
+        Commands::New { databasename } => {
+            let _ = Database::create(databasename);
+            return Ok(false);
         }
     }
     Ok(false)

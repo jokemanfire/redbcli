@@ -1,7 +1,4 @@
-use redb::{
-    Database, Error, ReadableTable, TableDefinition,
-    TableHandle,
-};
+use redb::{Database, Error, ReadableTable, TableDefinition, TableHandle};
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -53,12 +50,13 @@ impl CommonDbManager {
 impl DealTable for CommonDbManager {
     fn create_table(&self, key: String) -> Result<(), Error> {
         let db = self.getdb()?;
-        let read_txn = db.begin_read()?;
         let tabledefinition: TableDefinition<&str, &str> = TableDefinition::new(key.as_str());
-        match read_txn.open_table(tabledefinition) {
-            Ok(_) => Ok(()),
-            Err(e) => Err(Error::Corrupted(e.to_string())),
+        let write_txn = db.begin_write()?;
+        {
+            write_txn.open_table(tabledefinition)?;
         }
+        write_txn.commit()?;
+        Ok(())
     }
 
     fn delete_table(&self, key: String) -> Result<(), Error> {
