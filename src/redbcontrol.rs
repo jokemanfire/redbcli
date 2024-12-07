@@ -1,4 +1,4 @@
-use redb::{Database, Error, ReadableTable, TableDefinition, TableHandle};
+use redb::{Database, Error, TableDefinition, TableHandle};
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -118,7 +118,8 @@ impl DealData for CommonDbManager {
         let read_txn = db.begin_read()?;
         let table = read_txn.open_table(tabledefinition)?;
         let mut result = HashMap::new();
-        while let Some((k, v)) = table.iter()?.next().transpose()? {
+        let mut iter = table.range::<&str>(..)?;
+        while let Some((k, v)) = iter.next().transpose()? {
             result.insert(k.value().to_string(), v.value().to_string());
         }
         Ok(result)

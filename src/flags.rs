@@ -32,20 +32,20 @@ pub enum Commands {
     #[command(about = "info db data ex :'help show'", long_about = None)]
     Info(InfoArgs),
 
-    #[command(short_flag='e',about = "edit table data", long_about = None)]
+    #[command(about = "edit table data", long_about = None)]
     Edit,
 
     //todo create table
-    #[command(short_flag='c',about = "Create a table", long_about = None)]
+    #[command(about = "Create a table", long_about = None)]
     Create {
         tablename: String,
     },
-    #[command(short_flag='d',about = "Delete a table", long_about = None)]
+    #[command(about = "Delete a table", long_about = None)]
     Delete {
         tablename: String,
     },
 
-    #[command(short_flag='n',about = "Create a database", long_about = None)]
+    #[command(about = "Create a database", long_about = None)]
     New {
         databasename: String,
     },
