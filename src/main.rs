@@ -92,37 +92,48 @@ fn respond(line: &str, status: &mut CliStatus) -> Result<bool, String> {
     let args = shlex::split(line).ok_or("error: Invalid quoting")?;
     let cli = Cli::try_parse_from(args).map_err(|e| e.to_string())?;
     if !status.filepath.is_empty() {
-        let _ = status.dbm.setdbpath(status.filepath.clone());
+        status
+            .dbm
+            .setdbpath(status.filepath.clone())
+            .map_err(|e| e.to_string())?;
     }
     if !status.tablename.is_empty() {
-        let _ = status.dbm.settablename(status.tablename.clone());
+        status
+            .dbm
+            .settablename(status.tablename.clone())
+            .map_err(|e| e.to_string())?;
     }
     match cli.command {
         Commands::Set { filepath } => {
             write_io("set database success!".to_string())?;
             status.filepath = filepath;
+            return Ok(false);
         }
 
         Commands::Use { tablename } => {
             if status.filepath.is_empty() {
-                write_io("you must set file path first !!".to_string())?;
-                return Ok(false);
+                return Err("you must set file path first !!".to_string());
             }
             status.tablename = tablename.clone();
             write_io(format!("Use table {}", tablename))?;
+            return Ok(false);
         }
         Commands::Edit => {
             if status.tablename.is_empty() {
-                write_io("you must set table first !!".to_string())?;
-                return Ok(false);
+                return Err("you must set table first !!".to_string());
             }
-            let mut temp_file = tempfile::NamedTempFile::new().unwrap();
+            let mut temp_file = tempfile::NamedTempFile::new().map_err(|e| e.to_string())?;
             let result = status.dbm.get_all().map_err(|e| e.to_string())?;
-            let json_data = serde_json::to_string_pretty(&result).unwrap();
+            let json_data = serde_json::to_string_pretty(&result).map_err(|e| e.to_string())?;
 
-            temp_file.write_all(json_data.as_bytes()).unwrap();
+            temp_file
+                .write_all(json_data.as_bytes())
+                .map_err(|e| e.to_string())?;
 
-            let temp_path = temp_file.path().to_str().expect("Invalid path");
+            let temp_path = temp_file
+                .path()
+                .to_str()
+                .ok_or("Invalid path".to_string())?;
 
             let mut child = std::process::Command::new("vim")
                 .arg(temp_path)
@@ -133,16 +144,15 @@ fn respond(line: &str, status: &mut CliStatus) -> Result<bool, String> {
                 .stdout(std::process::Stdio::inherit())
                 .stderr(std::process::Stdio::inherit())
                 .spawn()
-                .unwrap();
+                .map_err(|e| e.to_string())?;
 
-            let vim_status = child.wait().unwrap();
+            let vim_status = child.wait().map_err(|e| e.to_string())?;
 
             if !vim_status.success() {
-                eprintln!("Vim exited with an error");
-                return Ok(true);
+                return Err("Vim exited with an error".to_string());
             }
 
-            let modified_data = std::fs::read_to_string(temp_path).unwrap();
+            let modified_data = std::fs::read_to_string(temp_path).map_err(|e| e.to_string())?;
             match serde_json::from_str::<HashMap<String, String>>(&modified_data) {
                 Ok(r_data) => {
                     if modified_data == json_data {
@@ -160,8 +170,7 @@ fn respond(line: &str, status: &mut CliStatus) -> Result<bool, String> {
                     return Ok(false);
                 }
                 Err(_) => {
-                    println!("This is not a valid json str");
-                    return Ok(false);
+                    return Err("This is not a valid json str".to_string());
                 }
             };
         }
@@ -182,11 +191,13 @@ fn respond(line: &str, status: &mut CliStatus) -> Result<bool, String> {
                 }
                 InfoCommands::Key { key } => {
                     if status.tablename.is_empty() {
-                        write_io("you must use table to select !!".to_string())?;
-                        return Ok(false);
+                        return Err("you must use table to select !!".to_string());
                     }
-                    let result = status.dbm.get_by_key(key).map_err(|e| e.to_string())?;
-                    write_io(format!("data \n{}", result))?;
+                    let result = status.dbm.get_by_key(key.clone()).map_err(|e| e.to_string())?;
+                    let mut kvdatas = HashMap::new();
+                    kvdatas.insert(key, result);
+                    KvInfo {kvdatas}.print_data();
+                    return Ok(false);
                 }
                 InfoCommands::Table { tablename } => {
                     status.tablename = tablename.clone();
@@ -217,5 +228,4 @@ fn respond(line: &str, status: &mut CliStatus) -> Result<bool, String> {
             return Ok(true);
         }
     }
-    Ok(false)
 }

@@ -17,22 +17,22 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 pub enum Commands {
     #[command(arg_required_else_help = true)]
-    #[command(about = "Set db filepath  ex: set '/home/test.redb'", long_about = None)]
+    #[command(about = "Set db filepath ex:set '/home/test.redb'", long_about = None)]
     Set {
         ///set file path
         filepath: String,
     },
     #[command(arg_required_else_help = false)]
-    #[command(about = "use db table name    ex : 'use $tablename'", long_about = None)]
+    #[command(about = "Use db table name ex:'use $tablename'", long_about = None)]
     Use {
         tablename: String,
     },
 
     #[command(arg_required_else_help = false)]
-    #[command(about = "info db data ex :'help show'", long_about = None)]
+    #[command(about = "Info db data ex:'help show'", long_about = None)]
     Info(InfoArgs),
 
-    #[command(about = "edit table data", long_about = None)]
+    #[command(about = "Edit table data", long_about = None)]
     Edit,
 
     //todo create table
@@ -63,12 +63,12 @@ pub struct InfoArgs {
 #[derive(Debug, Subcommand)]
 pub enum InfoCommands {
     //show all tables
-    #[command(about = "show all table name ", long_about = None)]
+    #[command(about = "Show all table name ", long_about = None)]
     Tables,
     //show key
-    #[command(short_flag='k',about = "use key get data", long_about = None)]
+    #[command(short_flag='k',about = "Use key get data", long_about = None)]
     Key { key: String },
     //show table data
-    #[command(short_flag='t',about = "get table data", long_about = None)]
+    #[command(short_flag='t',about = "Get table data", long_about = None)]
     Table { tablename: String },
 }
