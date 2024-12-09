@@ -7,7 +7,7 @@ use redbcli::{
     flags::{Commands, InfoCommands},
     redbcontrol::{CommonDbManager, DealData},
 };
-use redbcli::{KvInfo, TableInfo};
+use redbcli::{write_io_error, write_io_success, KvInfo, TableInfo};
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
 use std::collections::HashMap;
@@ -59,7 +59,7 @@ fn main() -> Result<(), String> {
                         }
                     }
                     Err(err) => {
-                        write_io(err)?;
+                        write_io_error(err)?;
                     }
                 }
             }
@@ -81,13 +81,6 @@ fn main() -> Result<(), String> {
     Ok(())
 }
 
-fn write_io(data: String) -> Result<(), String> {
-    let out_data = format!("-> {} \n", data);
-    write!(std::io::stdout(), "{}", out_data).map_err(|e| e.to_string())?;
-    std::io::stdout().flush().map_err(|e| e.to_string())?;
-    Ok(())
-}
-
 fn respond(line: &str, status: &mut CliStatus) -> Result<bool, String> {
     let args = shlex::split(line).ok_or("error: Invalid quoting")?;
     let cli = Cli::try_parse_from(args).map_err(|e| e.to_string())?;
@@ -105,9 +98,9 @@ fn respond(line: &str, status: &mut CliStatus) -> Result<bool, String> {
     }
     match cli.command {
         Commands::Set { filepath } => {
-            write_io("set database success!".to_string())?;
+            write_io_success("set database success!".to_string())?;
             status.filepath = filepath;
-            return Ok(false);
+            Ok(false)
         }
 
         Commands::Use { tablename } => {
@@ -115,8 +108,8 @@ fn respond(line: &str, status: &mut CliStatus) -> Result<bool, String> {
                 return Err("you must set file path first !!".to_string());
             }
             status.tablename = tablename.clone();
-            write_io(format!("Use table {}", tablename))?;
-            return Ok(false);
+            write_io_success(format!("Use table {}", tablename))?;
+            Ok(false)
         }
         Commands::Edit => {
             if status.tablename.is_empty() {
@@ -153,26 +146,25 @@ fn respond(line: &str, status: &mut CliStatus) -> Result<bool, String> {
             }
 
             let modified_data = std::fs::read_to_string(temp_path).map_err(|e| e.to_string())?;
-            match serde_json::from_str::<HashMap<String, String>>(&modified_data) {
-                Ok(r_data) => {
-                    if modified_data == json_data {
-                        println!("No changed!");
-                        return Ok(false);
-                    }
-                    result.iter().for_each(|(key, _)| {
-                        let _ = status.dbm.remove_by_key(key.to_string());
-                    });
-
-                    println!("Save data to update the database");
-                    r_data.iter().for_each(|(key, value)| {
-                        let _ = status.dbm.update_by_key(key.to_string(), value.to_string());
-                    });
+            let json_value: serde_json::Value =
+                serde_json::from_str(&modified_data).map_err(|e| e.to_string())?;
+            if let Some(object) = json_value.as_object() {
+                if modified_data == json_data {
+                    println!("No changed!");
                     return Ok(false);
                 }
-                Err(_) => {
-                    return Err("This is not a valid json str".to_string());
-                }
-            };
+                result.iter().for_each(|(key, _)| {
+                    let _ = status.dbm.remove_by_key(key.to_string());
+                });
+
+                println!("Save data to update the database");
+                object.iter().for_each(|(key, value)| {
+                    let _ = status.dbm.update_by_key(key.to_string(), value.to_string());
+                });
+                Ok(false)
+            } else {
+                Err("This is not a valid json str".to_string())
+            }
         }
 
         Commands::Info(subcmd) => {
@@ -182,50 +174,53 @@ fn respond(line: &str, status: &mut CliStatus) -> Result<bool, String> {
                     if status.tablename.is_empty() {
                         let result = status.dbm.list_table().map_err(|e| e.to_string())?;
                         TableInfo { tablename: result }.print_data();
-                        return Ok(false);
+                        Ok(false)
                     } else {
                         let result = status.dbm.get_all().map_err(|e| e.to_string())?;
                         KvInfo { kvdatas: result }.print_data();
-                        return Ok(false);
+                        Ok(false)
                     }
                 }
                 InfoCommands::Key { key } => {
                     if status.tablename.is_empty() {
                         return Err("you must use table to select !!".to_string());
                     }
-                    let result = status.dbm.get_by_key(key.clone()).map_err(|e| e.to_string())?;
+                    let result = status
+                        .dbm
+                        .get_by_key(key.clone())
+                        .map_err(|e| e.to_string())?;
                     let mut kvdatas = HashMap::new();
                     kvdatas.insert(key, result);
-                    KvInfo {kvdatas}.print_data();
-                    return Ok(false);
+                    KvInfo { kvdatas }.print_data();
+                    Ok(false)
                 }
                 InfoCommands::Table { tablename } => {
                     status.tablename = tablename.clone();
                     let result = status.dbm.get_all().map_err(|e| e.to_string())?;
                     KvInfo { kvdatas: result }.print_data();
-                    return Ok(false);
+                    Ok(false)
                 }
             }
         }
 
         Commands::Create { tablename } => {
             let _ = status.dbm.create_table(tablename);
-            write_io("create table success".to_string())?;
-            return Ok(false);
+            write_io_success("create table success".to_string())?;
+            Ok(false)
         }
         Commands::Delete { tablename } => {
             let _ = status.dbm.delete_table(tablename);
-            write_io("delete table success".to_string())?;
-            return Ok(false);
+            write_io_success("delete table success".to_string())?;
+            Ok(false)
         }
         Commands::New { databasename } => {
             let _ = Database::create(databasename);
-            write_io("create database success".to_string())?;
-            return Ok(false);
+            write_io_success("create database success".to_string())?;
+            Ok(false)
         }
         Commands::Exit => {
-            write_io("Exiting ... \n".to_string())?;
-            return Ok(true);
+            write_io_success("Exiting ... \n".to_string())?;
+            Ok(true)
         }
     }
 }

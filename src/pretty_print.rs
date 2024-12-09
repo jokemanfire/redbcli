@@ -9,7 +9,7 @@ pub trait PrintTable {
 impl PrintTable for TableInfo {
     fn print_data(&self) {
         let mut table = Table::new();
-        table.add_row(row!["id", "name"]);
+        table.add_row(row![Fgb=>"id", "name"]);
         let mut cnt = 1;
         self.tablename.iter().for_each(|t| {
             table.add_row(row![cnt.to_string(), &t]);
@@ -22,7 +22,7 @@ impl PrintTable for TableInfo {
 impl PrintTable for KvInfo {
     fn print_data(&self) {
         let mut table = Table::new();
-        table.add_row(row!["id", "key", "value"]);
+        table.add_row(row![Fgb=>"id", "key", "value"]);
         let mut cnt = 1;
         self.kvdatas.iter().for_each(|(k, v)| {
             table.add_row(row![cnt.to_string(), k, v]);
