@@ -1,9 +1,9 @@
 [package]
 name = "redbcli"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2021"
 authors = ["jokemanfire <hu.dingyang@zte.com.cn>"]
-description = "redbcli"
+description = "RedbCLI is a command-line tool for managing and operating Redb databases. It provides various commands to create, delete, query, and edit database tables."
 keywords = ["redb", "cli"]
 repository = "https://github.com/jokemanfire/redbcli"
 license = "MIT/Apache-2.0"
