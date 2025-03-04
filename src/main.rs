@@ -42,6 +42,19 @@ fn main() -> Result<(), String> {
     if rl.load_history(&file_history).is_err() {
         println!("No previous history.");
     }
+    if !clistatus.filepath.is_empty() {
+        clistatus
+            .dbm
+            .setdbpath(clistatus.filepath.clone())
+            .map_err(|e| e.to_string())?;
+    }
+    if !clistatus.tablename.is_empty() {
+        clistatus
+            .dbm
+            .settablename(clistatus.tablename.clone())
+            .map_err(|e| e.to_string())?;
+    }
+
     loop {
         let prompt = format!(
             "\nDB:[{}] TAB:[{}] \n>> ",
@@ -84,22 +97,15 @@ fn main() -> Result<(), String> {
 fn respond(line: &str, status: &mut CliStatus) -> Result<bool, String> {
     let args = shlex::split(line).ok_or("error: Invalid quoting")?;
     let cli = Cli::try_parse_from(args).map_err(|e| e.to_string())?;
-    if !status.filepath.is_empty() {
-        status
-            .dbm
-            .setdbpath(status.filepath.clone())
-            .map_err(|e| e.to_string())?;
-    }
-    if !status.tablename.is_empty() {
-        status
-            .dbm
-            .settablename(status.tablename.clone())
-            .map_err(|e| e.to_string())?;
-    }
+
     match cli.command {
         Commands::Set { filepath } => {
             write_io_success("set database success!".to_string())?;
             status.filepath = filepath;
+            status
+                .dbm
+                .setdbpath(status.filepath.clone())
+                .map_err(|e| e.to_string())?;
             Ok(false)
         }
 
@@ -108,6 +114,7 @@ fn respond(line: &str, status: &mut CliStatus) -> Result<bool, String> {
                 return Err("you must set file path first !!".to_string());
             }
             status.tablename = tablename.clone();
+            status.dbm.settablename(tablename.clone()).map_err(|e|e.to_string())?;
             write_io_success(format!("Use table {}", tablename))?;
             Ok(false)
         }
@@ -171,15 +178,9 @@ fn respond(line: &str, status: &mut CliStatus) -> Result<bool, String> {
             let sub_cmd = subcmd.command.unwrap_or(InfoCommands::Tables);
             match sub_cmd {
                 InfoCommands::Tables => {
-                    if status.tablename.is_empty() {
-                        let result = status.dbm.list_table().map_err(|e| e.to_string())?;
-                        TableInfo { tablename: result }.print_data();
-                        Ok(false)
-                    } else {
-                        let result = status.dbm.get_all().map_err(|e| e.to_string())?;
-                        KvInfo { kvdatas: result }.print_data();
-                        Ok(false)
-                    }
+                    let result = status.dbm.list_table().map_err(|e| e.to_string())?;
+                    TableInfo { tablename: result }.print_data();
+                    Ok(false)
                 }
                 InfoCommands::Key { key } => {
                     if status.tablename.is_empty() {
@@ -196,6 +197,7 @@ fn respond(line: &str, status: &mut CliStatus) -> Result<bool, String> {
                 }
                 InfoCommands::Table { tablename } => {
                     status.tablename = tablename.clone();
+                    status.dbm.settablename(tablename.clone()).map_err(|e|e.to_string())?;
                     let result = status.dbm.get_all().map_err(|e| e.to_string())?;
                     KvInfo { kvdatas: result }.print_data();
                     Ok(false)
