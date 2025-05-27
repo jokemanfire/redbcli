@@ -114,7 +114,10 @@ fn respond(line: &str, status: &mut CliStatus) -> Result<bool, String> {
                 return Err("you must set file path first !!".to_string());
             }
             status.tablename = tablename.clone();
-            status.dbm.settablename(tablename.clone()).map_err(|e|e.to_string())?;
+            status
+                .dbm
+                .settablename(tablename.clone())
+                .map_err(|e| e.to_string())?;
             write_io_success(format!("Use table {}", tablename))?;
             Ok(false)
         }
@@ -197,7 +200,10 @@ fn respond(line: &str, status: &mut CliStatus) -> Result<bool, String> {
                 }
                 InfoCommands::Table { tablename } => {
                     status.tablename = tablename.clone();
-                    status.dbm.settablename(tablename.clone()).map_err(|e|e.to_string())?;
+                    status
+                        .dbm
+                        .settablename(tablename.clone())
+                        .map_err(|e| e.to_string())?;
                     let result = status.dbm.get_all().map_err(|e| e.to_string())?;
                     KvInfo { kvdatas: result }.print_data();
                     Ok(false)
