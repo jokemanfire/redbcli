@@ -1,4 +1,4 @@
-use redb::{Database, Error, TableDefinition, TableHandle};
+use redb::{Database, Error, ReadableDatabase, TableDefinition, TableHandle};
 use std::collections::HashMap;
 use std::path::Path;
 
