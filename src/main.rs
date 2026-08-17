@@ -7,10 +7,9 @@ use redbcli::{
     flags::{Commands, InfoCommands},
     redbcontrol::{CommonDbManager, DealData},
 };
-use redbcli::{write_io_error, write_io_success, KvInfo, TableInfo};
+use redbcli::{write_io_error, write_io_success, KvInfo, TableInfo, TableMeta};
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
-use std::collections::HashMap;
 use std::io::Write;
 use std::path::PathBuf;
 #[derive(Default)]
@@ -125,10 +124,13 @@ fn respond(line: &str, status: &mut CliStatus) -> Result<bool, String> {
             if status.tablename.is_empty() {
                 return Err("you must set table first !!".to_string());
             }
-            let mut temp_file = tempfile::NamedTempFile::new().map_err(|e| e.to_string())?;
-            let result = status.dbm.get_all().map_err(|e| e.to_string())?;
-            let json_data = serde_json::to_string_pretty(&result).map_err(|e| e.to_string())?;
+            let (_desc, rows) = status
+                .dbm
+                .get_all_dyn(&status.tablename)
+                .map_err(|e| e.to_string())?;
+            let json_data = redbcli::rows_to_json(&rows)?;
 
+            let mut temp_file = tempfile::NamedTempFile::new().map_err(|e| e.to_string())?;
             temp_file
                 .write_all(json_data.as_bytes())
                 .map_err(|e| e.to_string())?;
@@ -156,33 +158,33 @@ fn respond(line: &str, status: &mut CliStatus) -> Result<bool, String> {
             }
 
             let modified_data = std::fs::read_to_string(temp_path).map_err(|e| e.to_string())?;
-            let json_value: serde_json::Value =
-                serde_json::from_str(&modified_data).map_err(|e| e.to_string())?;
-            if let Some(object) = json_value.as_object() {
-                if modified_data == json_data {
-                    println!("No changed!");
-                    return Ok(false);
-                }
-                result.iter().for_each(|(key, _)| {
-                    let _ = status.dbm.remove_by_key(key.to_string());
-                });
-
-                println!("Save data to update the database");
-                object.iter().for_each(|(key, value)| {
-                    let _ = status.dbm.update_by_key(key.to_string(), value.to_string());
-                });
-                Ok(false)
-            } else {
-                Err("This is not a valid json str".to_string())
+            if modified_data == json_data {
+                println!("No changed!");
+                return Ok(false);
             }
+            let new_rows = redbcli::json_to_rows(&modified_data)?;
+            status
+                .dbm
+                .update_all_dyn(&status.tablename, new_rows)
+                .map_err(|e| e.to_string())?;
+            write_io_success("Save data to update the database".to_string())?;
+            Ok(false)
         }
 
         Commands::Info(subcmd) => {
             let sub_cmd = subcmd.command.unwrap_or(InfoCommands::Tables);
             match sub_cmd {
                 InfoCommands::Tables => {
-                    let result = status.dbm.list_table().map_err(|e| e.to_string())?;
-                    TableInfo { tablename: result }.print_data();
+                    let result = status.dbm.list_table_types().map_err(|e| e.to_string())?;
+                    let tables = result
+                        .into_iter()
+                        .map(|(name, desc)| TableMeta {
+                            name,
+                            key_type: desc.key,
+                            value_type: desc.value,
+                        })
+                        .collect();
+                    TableInfo { tables }.print_data();
                     Ok(false)
                 }
                 InfoCommands::Key { key } => {
@@ -193,19 +195,28 @@ fn respond(line: &str, status: &mut CliStatus) -> Result<bool, String> {
                         .dbm
                         .get_by_key(key.clone())
                         .map_err(|e| e.to_string())?;
-                    let mut kvdatas = HashMap::new();
-                    kvdatas.insert(key, result);
-                    KvInfo { kvdatas }.print_data();
+                    let kvdatas = vec![(key, result)];
+                    KvInfo {
+                        kvdatas,
+                        key_type: "&str".to_string(),
+                        value_type: "&str".to_string(),
+                    }
+                    .print_data();
                     Ok(false)
                 }
                 InfoCommands::Table { tablename } => {
-                    status.tablename = tablename.clone();
-                    status
+                    let (desc, rows) = status
                         .dbm
-                        .settablename(tablename.clone())
+                        .get_all_dyn(&tablename)
                         .map_err(|e| e.to_string())?;
-                    let result = status.dbm.get_all().map_err(|e| e.to_string())?;
-                    KvInfo { kvdatas: result }.print_data();
+                    status.tablename = tablename.clone();
+                    status.dbm.tablename = tablename;
+                    KvInfo {
+                        kvdatas: rows,
+                        key_type: desc.key,
+                        value_type: desc.value,
+                    }
+                    .print_data();
                     Ok(false)
                 }
             }

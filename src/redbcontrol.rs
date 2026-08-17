@@ -1,4 +1,5 @@
-use redb::{Database, Error, ReadableDatabase, TableDefinition, TableHandle};
+use crate::dynread::{self, TableTypeDesc};
+use redb::{Database, Error, ReadableDatabase, TableDefinition, TableError, TableHandle};
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -23,6 +24,29 @@ pub trait DealData {
     fn update_by_key(&self, key: String, data: String) -> Result<(), Error>;
 }
 
+fn table_lookup_error(e: TableError, name: &str) -> Error {
+    match e {
+        TableError::TableDoesNotExist(_) => {
+            Error::Corrupted(format!("Table '{name}' does not exist"))
+        }
+        TableError::TableIsMultimap(_) => Error::Corrupted(format!(
+            "Table '{name}' is a multimap table, which is not supported yet"
+        )),
+        e => e.into(),
+    }
+}
+
+fn str_op_error(e: TableError, name: &str) -> Error {
+    match e {
+        TableError::TableTypeMismatch { key, value, .. } => Error::Corrupted(format!(
+            "table '{name}' is of type Table<{}, {}>; only &str -> &str tables support this operation, use 'info table {name}' to browse it",
+            key.name(),
+            value.name()
+        )),
+        e => table_lookup_error(e, name),
+    }
+}
+
 impl CommonDbManager {
     pub fn getdb(&self) -> Result<Database, Error> {
         let db_file = Path::new(&self.dbpath);
@@ -34,17 +58,54 @@ impl CommonDbManager {
     }
     pub fn settablename(&mut self, name: String) -> Result<(), Error> {
         let db = self.getdb()?;
-        self.tablename = name.clone();
-        let tab_name = self.tablename.clone();
-        let tabledefinition: TableDefinition<&str, &str> = TableDefinition::new(tab_name.as_str());
         let read_txn = db.begin_read()?;
-        let _ = read_txn.open_table(tabledefinition)?;
+        let handle: TableDefinition<&str, &str> = TableDefinition::new(name.as_str());
+        read_txn
+            .open_untyped_table(handle)
+            .map_err(|e| table_lookup_error(e, &name))?;
+        self.tablename = name;
         Ok(())
     }
     pub fn setdbpath(&mut self, path: String) -> Result<(), Error> {
         self.dbpath = path;
         self.getdb()?;
         Ok(())
+    }
+    pub fn table_type(&self, name: &str) -> Result<TableTypeDesc, Error> {
+        let db = self.getdb()?;
+        let read_txn = db.begin_read()?;
+        dynread::probe_table_type(&read_txn, name).map_err(|e| table_lookup_error(e, name))
+    }
+    pub fn list_table_types(&self) -> Result<Vec<(String, TableTypeDesc)>, Error> {
+        let names = DealTable::list_table(self)?;
+        let mut result = Vec::with_capacity(names.len());
+        for name in names {
+            let desc = self.table_type(&name)?;
+            result.push((name, desc));
+        }
+        Ok(result)
+    }
+    pub fn get_all_dyn(&self, name: &str) -> Result<(TableTypeDesc, Vec<(String, String)>), Error> {
+        let desc = self.table_type(name)?;
+        let db = self.getdb()?;
+        let read_txn = db.begin_read()?;
+        let rows = dynread::read_table_dyn(&read_txn, name, &desc).map_err(Error::Corrupted)?;
+        Ok((desc, rows))
+    }
+    /// Replaces the whole content of table `name` with edited rows (cell
+    /// strings as produced by `get_all_dyn`). All rows are validated before
+    /// anything is written; on error the table is left unchanged.
+    pub fn update_all_dyn(&self, name: &str, rows: Vec<(String, String)>) -> Result<(), Error> {
+        let desc = self.table_type(name)?;
+        let db = self.getdb()?;
+        let write_txn = db.begin_write()?;
+        match dynread::write_table_dyn(&write_txn, name, &desc, rows) {
+            Ok(()) => {
+                write_txn.commit()?;
+                Ok(())
+            }
+            Err(e) => Err(Error::Corrupted(e)),
+        }
     }
 }
 impl DealTable for CommonDbManager {
@@ -62,12 +123,12 @@ impl DealTable for CommonDbManager {
     fn delete_table(&self, key: String) -> Result<(), Error> {
         let db = self.getdb()?;
         let write_txn = db.begin_write()?;
-        {
-            let tabledefinition: TableDefinition<&str, &str> = TableDefinition::new(key.as_str());
-            match write_txn.delete_table(tabledefinition) {
-                Ok(_) => Ok(()),
-                Err(e) => Err(Error::Corrupted(e.to_string())),
-            }
+        let tabledefinition: TableDefinition<&str, &str> = TableDefinition::new(key.as_str());
+        let result = write_txn.delete_table(tabledefinition);
+        write_txn.commit()?;
+        match result {
+            Ok(_) => Ok(()),
+            Err(e) => Err(Error::Corrupted(e.to_string())),
         }
     }
 
@@ -88,7 +149,9 @@ impl DealData for CommonDbManager {
         let tabledefinition: TableDefinition<&str, &str> =
             TableDefinition::new(self.tablename.as_str());
         let read_txn = db.begin_read()?;
-        let table = read_txn.open_table(tabledefinition)?;
+        let table = read_txn
+            .open_table(tabledefinition)
+            .map_err(|e| str_op_error(e, &self.tablename))?;
         let binding = table.get(&key.as_str())?;
         if let Some(binding) = binding {
             let name_str = binding.value();
@@ -104,7 +167,9 @@ impl DealData for CommonDbManager {
             TableDefinition::new(self.tablename.as_str());
         let write_txn = db.begin_write()?;
         {
-            let mut table = write_txn.open_table(tabledefinition)?;
+            let mut table = write_txn
+                .open_table(tabledefinition)
+                .map_err(|e| str_op_error(e, &self.tablename))?;
             table.insert(&key.as_str(), &data.as_str())?;
         }
         write_txn.commit()?;
@@ -116,7 +181,9 @@ impl DealData for CommonDbManager {
         let tabledefinition: TableDefinition<&str, &str> =
             TableDefinition::new(self.tablename.as_str());
         let read_txn = db.begin_read()?;
-        let table = read_txn.open_table(tabledefinition)?;
+        let table = read_txn
+            .open_table(tabledefinition)
+            .map_err(|e| str_op_error(e, &self.tablename))?;
         let mut result = HashMap::new();
         let mut iter = table.range::<&str>(..)?;
         while let Some((k, v)) = iter.next().transpose()? {
@@ -130,11 +197,13 @@ impl DealData for CommonDbManager {
             TableDefinition::new(self.tablename.as_str());
         let write_txn = db.begin_write()?;
         {
-            let mut table = write_txn.open_table(tabledefinition)?;
+            let mut table = write_txn
+                .open_table(tabledefinition)
+                .map_err(|e| str_op_error(e, &self.tablename))?;
             table.remove(&key.as_str())?;
         }
         write_txn.commit()?;
-        Err(redb::Error::Corrupted("Database not found".to_string()))
+        Ok(())
     }
     fn update_by_key(&self, key: String, data: String) -> Result<(), Error> {
         let db = self.getdb()?;
@@ -142,10 +211,12 @@ impl DealData for CommonDbManager {
             TableDefinition::new(self.tablename.as_str());
         let write_txn = db.begin_write()?;
         {
-            let mut table = write_txn.open_table(tabledefinition)?;
+            let mut table = write_txn
+                .open_table(tabledefinition)
+                .map_err(|e| str_op_error(e, &self.tablename))?;
             table.insert(&key.as_str(), &data.as_str())?;
         }
         write_txn.commit()?;
-        Err(redb::Error::Corrupted("Database not found".to_string()))
+        Ok(())
     }
 }

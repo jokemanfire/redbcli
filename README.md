@@ -8,8 +8,9 @@ Need vim
 ## Features
 - Set database path
 - Use specific tables
-- Edit table data
-- Query table information
+- Browse tables of any key/value type (integers, tuples such as `Table<(u128,u128), u64>`, strings, byte slices, etc.)
+- Edit table data of any supported type (values are shown and edited as typed strings: decimals, `(a, b)` tuples, `0x` hex for bytes)
+- Query table information, including each table's key/value types
 - Create and delete tables
 
 ## Installation
@@ -48,7 +49,7 @@ info tables
 info key your_key
 info table your_table_name
 ```
-5. Edit table data:
+5. Edit table data (whole table is dumped as JSON, keys and values are typed strings; removing a JSON entry deletes the row, an invalid value aborts the edit without changing anything):
 ```sh
 edit
 ```

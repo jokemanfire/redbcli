@@ -21,3 +21,7 @@ serde_json = "1.0"
 rustyline = "15.0.0"
 tempfile = "3.14.0"
 comfy-table = "7"
+
+[dev-dependencies]
+redb = "3.1"
+tempfile = "3.14.0"
