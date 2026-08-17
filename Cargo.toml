@@ -1,6 +1,6 @@
 [package]
 name = "redbcli"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 authors = ["jokemanfire <hu.dingyang@zte.com.cn>"]
 description = "RedbCLI is a command-line tool for managing and operating Redb databases. It provides various commands to create, delete, query, and edit database tables."
