@@ -233,7 +233,12 @@ fn respond(line: &str, status: &mut CliStatus) -> Result<bool, String> {
             Ok(false)
         }
         Commands::New { databasename } => {
-            let _ = Database::create(databasename);
+            Database::create(&databasename).map_err(|e| e.to_string())?;
+            status.filepath = databasename.clone();
+            status
+                .dbm
+                .setdbpath(databasename)
+                .map_err(|e| e.to_string())?;
             write_io_success("create database success".to_string())?;
             Ok(false)
         }
