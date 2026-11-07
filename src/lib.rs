@@ -5,6 +5,65 @@ pub mod flags;
 pub mod pretty_print;
 pub mod redbcontrol;
 
+/// Errors surfaced by the command handlers.
+///
+/// `redb::Error::Corrupted` renders as `DB corrupted: ...`, which is reserved
+/// for damaged database files. A table whose `(K, V)` pair is outside this
+/// build's type registry is a limitation of the binary, not damage to the
+/// file, so it is carried by its own variant and rendered without the
+/// corruption prefix.
+#[derive(Debug)]
+pub enum CliError {
+    /// Any redb-level error, rendered verbatim by redb.
+    Redb(redb::Error),
+    /// The table's key/value types are not covered by this build's registry.
+    UnsupportedTableType { detail: String },
+}
+
+impl std::fmt::Display for CliError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CliError::Redb(e) => e.fmt(f),
+            CliError::UnsupportedTableType { detail } => write!(
+                f,
+                "unsupported table type: {detail} (the database file is not damaged; \
+                 this build of redbcli simply cannot read or write this type yet)"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for CliError {}
+
+impl From<redb::Error> for CliError {
+    fn from(e: redb::Error) -> Self {
+        CliError::Redb(e)
+    }
+}
+
+/// redb splits its failures across several error enums; every one of them
+/// converts into `redb::Error`, which keeps the original rendering.
+macro_rules! cli_error_from_redb {
+    ($($ty:ty),* $(,)?) => {
+        $(
+            impl From<$ty> for CliError {
+                fn from(e: $ty) -> Self {
+                    CliError::Redb(e.into())
+                }
+            }
+        )*
+    };
+}
+
+cli_error_from_redb!(
+    redb::TableError,
+    redb::StorageError,
+    redb::TransactionError,
+    redb::CommitError,
+    redb::DatabaseError,
+    redb::SavepointError,
+);
+
 macro_rules! write_io {
     ($func_name:ident, $prefix:literal) => {
         pub fn $func_name(data: String) -> Result<(), String> {
