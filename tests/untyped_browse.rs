@@ -155,7 +155,7 @@ fn info_table_reports_unsupported_types() {
     let (_dir, dbm) = make_db();
     let err = dbm.get_all_dyn("opt_vals").unwrap_err();
     let msg = err.to_string();
-    assert!(msg.contains("unsupported"), "unexpected error: {msg}");
+    assert!(msg.contains("cannot decode yet"), "unexpected error: {msg}");
     assert!(msg.contains("Option<u64>"), "unexpected error: {msg}");
 }
 
