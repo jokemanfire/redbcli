@@ -730,7 +730,7 @@ pub fn read_table_dyn(
 
     Err(format!(
         "table '{name}' has key/value types Table<{key_name}, {value_name}> that redbcli cannot decode yet; \
-         supported: scalars, &str/String, &[u8]/Vec<u8>, homogeneous tuples of 2-3 elements, and 4-element tuple values"
+         supported: registered scalar/string/byte-slice types; homogeneous 2-3-element tuple keys with non-tuple values; homogeneous 4-element tuple values only with non-tuple keys"
     ))
 }
 
