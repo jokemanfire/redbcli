@@ -96,6 +96,12 @@ impl<A: Debug, B: Debug, C: Debug> FmtCell for (A, B, C) {
     }
 }
 
+impl<A: Debug, B: Debug, C: Debug, D: Debug> FmtCell for (A, B, C, D) {
+    fn fmt_cell(&self) -> String {
+        format!("{self:?}")
+    }
+}
+
 pub fn bytes_to_hex(data: &[u8]) -> String {
     let mut out = String::with_capacity(2 + data.len() * 2);
     out.push_str("0x");
@@ -466,12 +472,81 @@ impl_owned_tuples!(
     |s| (s.0.as_slice(), s.1.as_slice(), s.2.as_slice())
 );
 
+macro_rules! impl_owned_tuple4 {
+    ($k:ty, $o:ty, |$s:ident| $arg:expr) => {
+        impl OwnedCell<($k, $k, $k, $k)> for ($o, $o, $o, $o) {
+            fn parse_cell(text: &str) -> Result<Self, String> {
+                let inner = text
+                    .trim()
+                    .strip_prefix('(')
+                    .and_then(|x| x.strip_suffix(')'))
+                    .ok_or_else(|| {
+                        format!("expected tuple like (a, b, c, d), got '{}'", text.trim())
+                    })?;
+                let elems = split_top_level(inner)?;
+                if elems.len() != 4 {
+                    return Err(format!(
+                        "expected 4 tuple elements, got {} in '{text}'",
+                        elems.len()
+                    ));
+                }
+                Ok((
+                    <$o as OwnedCell<$k>>::parse_elem(elems[0].trim())?,
+                    <$o as OwnedCell<$k>>::parse_elem(elems[1].trim())?,
+                    <$o as OwnedCell<$k>>::parse_elem(elems[2].trim())?,
+                    <$o as OwnedCell<$k>>::parse_elem(elems[3].trim())?,
+                ))
+            }
+            fn parse_elem(text: &str) -> Result<Self, String> {
+                <($o, $o, $o, $o) as OwnedCell<($k, $k, $k, $k)>>::parse_cell(text)
+            }
+            fn as_arg(&self) -> <($k, $k, $k, $k) as Value>::SelfType<'_> {
+                let $s = self;
+                $arg
+            }
+        }
+    };
+}
+
+impl_owned_tuple4!(u8, u8, |s| (s.0, s.1, s.2, s.3));
+impl_owned_tuple4!(u16, u16, |s| (s.0, s.1, s.2, s.3));
+impl_owned_tuple4!(u32, u32, |s| (s.0, s.1, s.2, s.3));
+impl_owned_tuple4!(u64, u64, |s| (s.0, s.1, s.2, s.3));
+impl_owned_tuple4!(u128, u128, |s| (s.0, s.1, s.2, s.3));
+impl_owned_tuple4!(i8, i8, |s| (s.0, s.1, s.2, s.3));
+impl_owned_tuple4!(i16, i16, |s| (s.0, s.1, s.2, s.3));
+impl_owned_tuple4!(i32, i32, |s| (s.0, s.1, s.2, s.3));
+impl_owned_tuple4!(i64, i64, |s| (s.0, s.1, s.2, s.3));
+impl_owned_tuple4!(i128, i128, |s| (s.0, s.1, s.2, s.3));
+impl_owned_tuple4!(bool, bool, |s| (s.0, s.1, s.2, s.3));
+impl_owned_tuple4!(char, char, |s| (s.0, s.1, s.2, s.3));
+impl_owned_tuple4!((), (), |s| (s.0, s.1, s.2, s.3));
+impl_owned_tuple4!(&'static str, String, |s| (
+    s.0.as_str(),
+    s.1.as_str(),
+    s.2.as_str(),
+    s.3.as_str()
+));
+impl_owned_tuple4!(String, String, |s| (
+    s.0.clone(),
+    s.1.clone(),
+    s.2.clone(),
+    s.3.clone()
+));
+impl_owned_tuple4!(&'static [u8], Vec<u8>, |s| (
+    s.0.as_slice(),
+    s.1.as_slice(),
+    s.2.as_slice(),
+    s.3.as_slice()
+));
+
 // ---------------------------------------------------------------------------
 // Typed read/write dispatch over the registered type combinations
 // ---------------------------------------------------------------------------
 
 macro_rules! registry_keys {
-    ($values:ident) => {
+    ($values:ident, $values4:ident) => {
+        // Base (non-tuple) keys also support 4-element tuple values.
         $values!(u8, u8);
         $values!(u16, u16);
         $values!(u32, u32);
@@ -488,6 +563,23 @@ macro_rules! registry_keys {
         $values!(&str, String);
         $values!(String, String);
         $values!(&[u8], Vec<u8>);
+        $values4!(u8, u8);
+        $values4!(u16, u16);
+        $values4!(u32, u32);
+        $values4!(u64, u64);
+        $values4!(u128, u128);
+        $values4!(i8, i8);
+        $values4!(i16, i16);
+        $values4!(i32, i32);
+        $values4!(i64, i64);
+        $values4!(i128, i128);
+        $values4!(bool, bool);
+        $values4!(char, char);
+        $values4!((), ());
+        $values4!(&str, String);
+        $values4!(String, String);
+        $values4!(&[u8], Vec<u8>);
+        // Tuple keys keep their existing value coverage.
         $values!((u8, u8), (u8, u8));
         $values!((u16, u16), (u16, u16));
         $values!((u32, u32), (u32, u32));
@@ -546,6 +638,45 @@ macro_rules! registry_values {
     };
 }
 
+/// 4-element tuple values. Kept separate from [`registry_values`] so they are
+/// only instantiated for base (non-tuple) keys; a full cross product with the
+/// tuple registry makes rustc monomorphization explode.
+macro_rules! registry_values4 {
+    ($pair:ident, $kt:ty, $ko:ty) => {
+        $pair!($kt, (u8, u8, u8, u8), $ko, (u8, u8, u8, u8));
+        $pair!($kt, (u16, u16, u16, u16), $ko, (u16, u16, u16, u16));
+        $pair!($kt, (u32, u32, u32, u32), $ko, (u32, u32, u32, u32));
+        $pair!($kt, (u64, u64, u64, u64), $ko, (u64, u64, u64, u64));
+        $pair!($kt, (u128, u128, u128, u128), $ko, (u128, u128, u128, u128));
+        $pair!($kt, (i8, i8, i8, i8), $ko, (i8, i8, i8, i8));
+        $pair!($kt, (i16, i16, i16, i16), $ko, (i16, i16, i16, i16));
+        $pair!($kt, (i32, i32, i32, i32), $ko, (i32, i32, i32, i32));
+        $pair!($kt, (i64, i64, i64, i64), $ko, (i64, i64, i64, i64));
+        $pair!($kt, (i128, i128, i128, i128), $ko, (i128, i128, i128, i128));
+        $pair!($kt, (bool, bool, bool, bool), $ko, (bool, bool, bool, bool));
+        $pair!($kt, (char, char, char, char), $ko, (char, char, char, char));
+        $pair!($kt, ((), (), (), ()), $ko, ((), (), (), ()));
+        $pair!(
+            $kt,
+            (&str, &str, &str, &str),
+            $ko,
+            (String, String, String, String)
+        );
+        $pair!(
+            $kt,
+            (String, String, String, String),
+            $ko,
+            (String, String, String, String)
+        );
+        $pair!(
+            $kt,
+            (&[u8], &[u8], &[u8], &[u8]),
+            $ko,
+            (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)
+        );
+    };
+}
+
 fn read_rows<K, V>(txn: &ReadTransaction, name: &str) -> Result<Vec<(String, String)>, redb::Error>
 where
     K: Key + 'static + Borrow<<K as Value>::SelfType<'static>>,
@@ -565,8 +696,11 @@ where
 
 /// Reads a table with the types described by `desc`, which is obtained by
 /// probing the table definition. Only type combinations covered by the
-/// registry below can be read; extend `registry_keys!` / `registry_values!`
-/// to support more.
+/// registries below can be read; extend `registry_keys!` / `registry_values!`
+/// (and `registry_values4!` for 4-element tuple values) to support more.
+///
+/// The registries are a static cross product because redb only exposes typed
+/// table access; keep additions bounded, monomorphization cost grows fast.
 pub fn read_table_dyn(
     txn: &ReadTransaction,
     name: &str,
@@ -587,10 +721,16 @@ pub fn read_table_dyn(
             registry_values!(read_pair, $kt, $ko);
         };
     }
-    registry_keys!(read_values);
+    macro_rules! read_values4 {
+        ($kt:ty, $ko:ty) => {
+            registry_values4!(read_pair, $kt, $ko);
+        };
+    }
+    registry_keys!(read_values, read_values4);
 
     Err(format!(
-        "table '{name}' has unsupported key/value types Table<{key_name}, {value_name}>"
+        "table '{name}' has key/value types Table<{key_name}, {value_name}> that redbcli cannot decode yet; \
+         supported: scalars, &str/String, &[u8]/Vec<u8>, homogeneous tuples of 2-3 elements, and 4-element tuple values"
     ))
 }
 
@@ -676,10 +816,16 @@ pub fn write_table_dyn(
             registry_values!(write_pair, $kt, $ko);
         };
     }
-    registry_keys!(write_values);
+    macro_rules! write_values4 {
+        ($kt:ty, $ko:ty) => {
+            registry_values4!(write_pair, $kt, $ko);
+        };
+    }
+    registry_keys!(write_values, write_values4);
 
     Err(format!(
-        "table '{name}' has key/value types Table<{key_name}, {value_name}> that cannot be edited (unsupported)"
+        "table '{name}' has key/value types Table<{key_name}, {value_name}> that cannot be edited yet; \
+         supported: scalars, &str/String, &[u8]/Vec<u8>, homogeneous tuples of 2-3 elements, and 4-element tuple values"
     ))
 }
 
