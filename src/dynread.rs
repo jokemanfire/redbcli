@@ -10,6 +10,40 @@ pub struct TableTypeDesc {
     pub value: String,
 }
 
+/// Error returned by the dynamic readers/writers.
+///
+/// The unsupported-type case is deliberately separate from the other
+/// failures: it means "this build has no code for that (K, V) pair", not
+/// "the bytes on disk are wrong".
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DynError {
+    /// No registered reader/writer matches the table's (K, V) pair.
+    UnsupportedTableType { detail: String },
+    /// A registered type failed to read or write (I/O, decode, bad cell text).
+    Other(String),
+}
+
+impl std::fmt::Display for DynError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DynError::UnsupportedTableType { detail } | DynError::Other(detail) => {
+                f.write_str(detail)
+            }
+        }
+    }
+}
+
+impl From<DynError> for crate::CliError {
+    fn from(e: DynError) -> Self {
+        match e {
+            DynError::UnsupportedTableType { detail } => {
+                crate::CliError::UnsupportedTableType { detail }
+            }
+            DynError::Other(msg) => crate::CliError::Redb(redb::Error::Corrupted(msg)),
+        }
+    }
+}
+
 pub fn type_name_of<T: Value + 'static>() -> String {
     T::type_name().name().to_string()
 }
@@ -705,14 +739,15 @@ pub fn read_table_dyn(
     txn: &ReadTransaction,
     name: &str,
     desc: &TableTypeDesc,
-) -> Result<Vec<(String, String)>, String> {
+) -> Result<Vec<(String, String)>, DynError> {
     let key_name = desc.key.as_str();
     let value_name = desc.value.as_str();
 
     macro_rules! read_pair {
         ($kt:ty, $vt:ty, $ko:ty, $vo:ty) => {
             if key_name == type_name_of::<$kt>() && value_name == type_name_of::<$vt>() {
-                return read_rows::<$kt, $vt>(txn, name).map_err(|e| e.to_string());
+                return read_rows::<$kt, $vt>(txn, name)
+                    .map_err(|e| DynError::Other(e.to_string()));
             }
         };
     }
@@ -728,10 +763,12 @@ pub fn read_table_dyn(
     }
     registry_keys!(read_values, read_values4);
 
-    Err(format!(
-        "table '{name}' has key/value types Table<{key_name}, {value_name}> that redbcli cannot decode yet; \
-         supported: registered scalar/string/byte-slice types; homogeneous 2-3-element tuple keys with non-tuple values; homogeneous 4-element tuple values only with non-tuple keys"
-    ))
+    Err(DynError::UnsupportedTableType {
+        detail: format!(
+            "table '{name}' has key/value types Table<{key_name}, {value_name}> that redbcli cannot decode yet; \
+             supported: registered scalar/string/byte-slice types; homogeneous 2-3-element tuple keys with non-tuple values; homogeneous 4-element tuple values only with non-tuple keys"
+        ),
+    })
 }
 
 fn write_rows<K, V, KO, VO>(
@@ -800,14 +837,14 @@ pub fn write_table_dyn(
     name: &str,
     desc: &TableTypeDesc,
     rows: Vec<(String, String)>,
-) -> Result<(), String> {
+) -> Result<(), DynError> {
     let key_name = desc.key.as_str();
     let value_name = desc.value.as_str();
 
     macro_rules! write_pair {
         ($kt:ty, $vt:ty, $ko:ty, $vo:ty) => {
             if key_name == type_name_of::<$kt>() && value_name == type_name_of::<$vt>() {
-                return write_rows::<$kt, $vt, $ko, $vo>(txn, name, rows);
+                return write_rows::<$kt, $vt, $ko, $vo>(txn, name, rows).map_err(DynError::Other);
             }
         };
     }
@@ -823,10 +860,12 @@ pub fn write_table_dyn(
     }
     registry_keys!(write_values, write_values4);
 
-    Err(format!(
-        "table '{name}' has key/value types Table<{key_name}, {value_name}> that cannot be edited yet; \
-         supported: scalars, &str/String, &[u8]/Vec<u8>, homogeneous tuples of 2-3 elements, and 4-element tuple values"
-    ))
+    Err(DynError::UnsupportedTableType {
+        detail: format!(
+            "table '{name}' has key/value types Table<{key_name}, {value_name}> that cannot be edited yet; \
+             supported: scalars, &str/String, &[u8]/Vec<u8>, homogeneous tuples of 2-3 elements, and 4-element tuple values"
+        ),
+    })
 }
 
 #[cfg(test)]
