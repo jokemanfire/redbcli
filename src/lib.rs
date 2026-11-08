@@ -1,5 +1,7 @@
 use std::collections::HashMap;
+use std::ffi::OsString;
 use std::io::Write;
+use std::path::{Path, PathBuf};
 pub mod dynread;
 pub mod flags;
 pub mod pretty_print;
@@ -69,6 +71,81 @@ pub fn json_to_rows(json: &str) -> Result<Vec<(String, String)>, String> {
     Ok(rows)
 }
 
+/// Directory that holds the REPL history file.
+///
+/// Order, first hit wins:
+///
+/// 1. `REDBCLI_HISTORY_DIR` (non-empty), for containers and tests;
+/// 2. `$XDG_STATE_HOME/redbcli`, but only when `XDG_STATE_HOME` is absolute —
+///    the XDG spec says a relative value must be ignored;
+/// 3. `$HOME/.local/state/redbcli`, the spec's default for state files;
+/// 4. `<temp>/redbcli`, the pre-0.4 location, kept only for environments with
+///    neither a state home nor a home directory.
+///
+/// History is state, not scratch data: the old fixed `/tmp/redbcli` was shared
+/// by every user on the host and stored database paths and edited content in a
+/// world-readable directory.
+pub fn history_dir() -> PathBuf {
+    history_dir_from(
+        std::env::var_os("REDBCLI_HISTORY_DIR"),
+        std::env::var_os("XDG_STATE_HOME"),
+        std::env::var_os("HOME"),
+        &std::env::temp_dir(),
+    )
+}
+
+/// Pure resolver behind [`history_dir`], so the precedence is testable without
+/// mutating the process environment (tests run in parallel).
+pub fn history_dir_from(
+    override_dir: Option<OsString>,
+    xdg_state_home: Option<OsString>,
+    home: Option<OsString>,
+    temp_dir: &Path,
+) -> PathBuf {
+    if let Some(dir) = override_dir.filter(|value| !value.is_empty()) {
+        return PathBuf::from(dir);
+    }
+    if let Some(xdg) = xdg_state_home.filter(|value| !value.is_empty()) {
+        let path = PathBuf::from(&xdg);
+        if path.is_absolute() {
+            return path.join("redbcli");
+        }
+    }
+    if let Some(home) = home.filter(|value| !value.is_empty()) {
+        return PathBuf::from(home)
+            .join(".local")
+            .join("state")
+            .join("redbcli");
+    }
+    temp_dir.join("redbcli")
+}
+
+/// Create the history directory and file, returning `None` instead of panicking.
+///
+/// A REPL with no history is a degraded but usable CLI; a panic in `main` before
+/// the first prompt means the tool cannot be used at all on a read-only or
+/// foreign-owned `$HOME`, `/tmp`, or `XDG_STATE_HOME`.
+pub fn prepare_history_file(dir: &Path) -> Option<PathBuf> {
+    if let Err(err) = std::fs::create_dir_all(dir) {
+        eprintln!(
+            "warning: cannot create history directory {}: {err}",
+            dir.display()
+        );
+        return None;
+    }
+    let file = dir.join("history.txt");
+    if !file.exists() {
+        if let Err(err) = std::fs::File::create(&file) {
+            eprintln!(
+                "warning: cannot create history file {}: {err}",
+                file.display()
+            );
+            return None;
+        }
+    }
+    Some(file)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -101,6 +178,89 @@ mod tests {
     fn json_rejects_non_string_values() {
         let err = json_to_rows("{\"a\": 42}").unwrap_err();
         assert!(err.contains("must be a json string"), "got: {err}");
+    }
+
+    #[test]
+    fn history_dir_prefers_the_explicit_override() {
+        let dir = history_dir_from(
+            Some(OsString::from("/srv/state/cli")),
+            Some(OsString::from("/xdg/state")),
+            Some(OsString::from("/home/app")),
+            Path::new("/tmp"),
+        );
+        assert_eq!(dir, PathBuf::from("/srv/state/cli"));
+    }
+
+    #[test]
+    fn history_dir_uses_an_absolute_xdg_state_home() {
+        let dir = history_dir_from(
+            None,
+            Some(OsString::from("/xdg/state")),
+            Some(OsString::from("/home/app")),
+            Path::new("/tmp"),
+        );
+        assert_eq!(dir, PathBuf::from("/xdg/state/redbcli"));
+    }
+
+    #[test]
+    fn history_dir_ignores_a_relative_xdg_state_home() {
+        // The XDG spec says a relative value is invalid and must be ignored.
+        let dir = history_dir_from(
+            None,
+            Some(OsString::from("relative/state")),
+            Some(OsString::from("/home/app")),
+            Path::new("/tmp"),
+        );
+        assert_eq!(dir, PathBuf::from("/home/app/.local/state/redbcli"));
+    }
+
+    #[test]
+    fn history_dir_ignores_empty_values() {
+        let dir = history_dir_from(
+            Some(OsString::new()),
+            Some(OsString::new()),
+            Some(OsString::new()),
+            Path::new("/tmp"),
+        );
+        assert_eq!(dir, PathBuf::from("/tmp/redbcli"));
+    }
+
+    #[test]
+    fn history_dir_falls_back_to_home_then_temp() {
+        let with_home = history_dir_from(
+            None,
+            None,
+            Some(OsString::from("/home/app")),
+            Path::new("/tmp"),
+        );
+        assert_eq!(with_home, PathBuf::from("/home/app/.local/state/redbcli"));
+
+        let without_home = history_dir_from(None, None, None, Path::new("/tmp"));
+        assert_eq!(without_home, PathBuf::from("/tmp/redbcli"));
+    }
+
+    #[test]
+    fn prepare_history_file_creates_the_directory_and_file() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join("nested").join("redbcli");
+
+        let file = prepare_history_file(&dir).expect("history file should be created");
+
+        assert_eq!(file, dir.join("history.txt"));
+        assert!(file.exists());
+        // Second call reuses the existing file instead of truncating it.
+        std::fs::write(&file, "set db.redb\n").unwrap();
+        assert!(prepare_history_file(&dir).is_some());
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "set db.redb\n");
+    }
+
+    #[test]
+    fn prepare_history_file_reports_failure_instead_of_panicking() {
+        let root = tempfile::tempdir().unwrap();
+        let blocker = root.path().join("blocked");
+        std::fs::write(&blocker, "not a directory").unwrap();
+
+        assert!(prepare_history_file(&blocker.join("redbcli")).is_none());
     }
 
     #[test]
