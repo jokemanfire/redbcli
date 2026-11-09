@@ -152,14 +152,15 @@ pub fn prepare_history_file(dir: &Path) -> Option<PathBuf> {
         // Another REPL created it between the check and our open: reuse it rather
         // than truncating what that session already saved.
         Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
-            if reuse_history_file(&file) {
-                Some(file)
-            } else {
-                eprintln!(
-                    "warning: refusing history file {}: not a regular file",
-                    file.display()
-                );
-                None
+            match reuse_history_file(&file) {
+                Ok(()) => Some(file),
+                Err(reason) => {
+                    eprintln!(
+                        "warning: refusing history file {}: {reason}",
+                        file.display()
+                    );
+                    None
+                }
             }
         }
         Err(err) => {
@@ -219,21 +220,26 @@ fn create_history_file(file: &Path) -> std::io::Result<()> {
 }
 
 /// Validate an existing history file, tightening permissions an older version left.
-fn reuse_history_file(file: &Path) -> bool {
+///
+/// The error carries the reason a caller must report: "cannot tighten" is not the
+/// same as "not a regular file", and silently keeping a file other users can read
+/// would leave the history exposed for the rest of the session.
+fn reuse_history_file(file: &Path) -> Result<(), String> {
     let Ok(meta) = std::fs::symlink_metadata(file) else {
-        return false;
+        return Err("cannot inspect it".to_string());
     };
     if !meta.file_type().is_file() {
-        return false;
+        return Err("not a regular file".to_string());
     }
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         if meta.permissions().mode() & 0o077 != 0 {
-            let _ = std::fs::set_permissions(file, std::fs::Permissions::from_mode(0o600));
+            std::fs::set_permissions(file, std::fs::Permissions::from_mode(0o600))
+                .map_err(|err| format!("readable by group/other and cannot be tightened: {err}"))?;
         }
     }
-    true
+    Ok(())
 }
 
 #[cfg(test)]

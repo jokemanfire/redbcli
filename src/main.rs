@@ -81,7 +81,14 @@ fn main() -> Result<(), String> {
         }
     }
     if let Some(file_history) = &history_file {
-        let _ = rl.save_history(file_history);
+        // A silent discard here is how a read-only history file loses a session's
+        // entries without the user ever learning why.
+        if let Err(err) = rl.save_history(file_history) {
+            eprintln!(
+                "warning: cannot save history to {}: {err}",
+                file_history.display()
+            );
+        }
     }
     Ok(())
 }
