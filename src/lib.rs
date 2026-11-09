@@ -78,19 +78,19 @@ pub fn json_to_rows(json: &str) -> Result<Vec<(String, String)>, String> {
 /// 1. `REDBCLI_HISTORY_DIR` (non-empty), for containers and tests;
 /// 2. `$XDG_STATE_HOME/redbcli`, but only when `XDG_STATE_HOME` is absolute —
 ///    the XDG spec says a relative value must be ignored;
-/// 3. `$HOME/.local/state/redbcli`, the spec's default for state files;
-/// 4. `<temp>/redbcli`, the pre-0.4 location, kept only for environments with
-///    neither a state home nor a home directory.
+/// 3. `$HOME/.local/state/redbcli`, the spec's default for state files.
 ///
-/// History is state, not scratch data: the old fixed `/tmp/redbcli` was shared
-/// by every user on the host and stored database paths and edited content in a
-/// world-readable directory.
-pub fn history_dir() -> PathBuf {
+/// There is deliberately no `<temp>/redbcli` fallback. History is state, not
+/// scratch data — it records database paths and edited content — and a
+/// predictable name under a shared temp directory is a name another user on the
+/// same host can create first. When neither a state home nor a home directory is
+/// available the caller gets `None`, and the REPL runs without history instead of
+/// writing into a directory somebody else owns.
+pub fn history_dir() -> Option<PathBuf> {
     history_dir_from(
         std::env::var_os("REDBCLI_HISTORY_DIR"),
         std::env::var_os("XDG_STATE_HOME"),
         std::env::var_os("HOME"),
-        &std::env::temp_dir(),
     )
 }
 
@@ -100,50 +100,140 @@ pub fn history_dir_from(
     override_dir: Option<OsString>,
     xdg_state_home: Option<OsString>,
     home: Option<OsString>,
-    temp_dir: &Path,
-) -> PathBuf {
+) -> Option<PathBuf> {
     if let Some(dir) = override_dir.filter(|value| !value.is_empty()) {
-        return PathBuf::from(dir);
+        return Some(PathBuf::from(dir));
     }
     if let Some(xdg) = xdg_state_home.filter(|value| !value.is_empty()) {
         let path = PathBuf::from(&xdg);
         if path.is_absolute() {
-            return path.join("redbcli");
+            return Some(path.join("redbcli"));
         }
     }
-    if let Some(home) = home.filter(|value| !value.is_empty()) {
-        return PathBuf::from(home)
+    home.filter(|value| !value.is_empty()).map(|home| {
+        PathBuf::from(home)
             .join(".local")
             .join("state")
-            .join("redbcli");
-    }
-    temp_dir.join("redbcli")
+            .join("redbcli")
+    })
 }
 
 /// Create the history directory and file, returning `None` instead of panicking.
 ///
 /// A REPL with no history is a degraded but usable CLI; a panic in `main` before
 /// the first prompt means the tool cannot be used at all on a read-only or
-/// foreign-owned `$HOME`, `/tmp`, or `XDG_STATE_HOME`.
+/// foreign-owned `$HOME` or `XDG_STATE_HOME`.
+///
+/// The directory is created owner-only (`0700`). An existing one is refused when
+/// it is a symlink, not a directory, or writable by group/other: history another
+/// user can add to or replace is not history. The file is created with
+/// `create_new` — never truncating one another session just wrote — at mode
+/// `0600` from the first byte, so no descriptor can be held open during a window
+/// when the file is still `0644`. An existing file is reused only when it is a
+/// regular file: a symlink there would redirect the history writes.
 pub fn prepare_history_file(dir: &Path) -> Option<PathBuf> {
-    if let Err(err) = std::fs::create_dir_all(dir) {
+    if let Err(err) = create_history_dir(dir) {
         eprintln!(
             "warning: cannot create history directory {}: {err}",
             dir.display()
         );
         return None;
     }
+    if !directory_is_private(dir) {
+        eprintln!(
+            "warning: refusing history directory {}: not a private directory",
+            dir.display()
+        );
+        return None;
+    }
     let file = dir.join("history.txt");
-    if !file.exists() {
-        if let Err(err) = std::fs::File::create(&file) {
+    match create_history_file(&file) {
+        Ok(()) => Some(file),
+        // Another REPL created it between the check and our open: reuse it rather
+        // than truncating what that session already saved.
+        Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
+            if reuse_history_file(&file) {
+                Some(file)
+            } else {
+                eprintln!(
+                    "warning: refusing history file {}: not a regular file",
+                    file.display()
+                );
+                None
+            }
+        }
+        Err(err) => {
             eprintln!(
                 "warning: cannot create history file {}: {err}",
                 file.display()
             );
-            return None;
+            None
         }
     }
-    Some(file)
+}
+
+#[cfg(unix)]
+fn create_history_dir(dir: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::DirBuilderExt;
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(dir)
+}
+
+#[cfg(not(unix))]
+fn create_history_dir(dir: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dir)
+}
+
+/// False when the directory could be controlled by somebody else.
+///
+/// Mode bits are a Unix notion; elsewhere only the "is a directory" part is
+/// checked, which is what `std` can express portably.
+fn directory_is_private(dir: &Path) -> bool {
+    let Ok(meta) = std::fs::symlink_metadata(dir) else {
+        return false;
+    };
+    if !meta.file_type().is_dir() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if meta.permissions().mode() & 0o022 != 0 {
+            return false;
+        }
+    }
+    true
+}
+
+fn create_history_file(file: &Path) -> std::io::Result<()> {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    options.open(file).map(|_| ())
+}
+
+/// Validate an existing history file, tightening permissions an older version left.
+fn reuse_history_file(file: &Path) -> bool {
+    let Ok(meta) = std::fs::symlink_metadata(file) else {
+        return false;
+    };
+    if !meta.file_type().is_file() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if meta.permissions().mode() & 0o077 != 0 {
+            let _ = std::fs::set_permissions(file, std::fs::Permissions::from_mode(0o600));
+        }
+    }
+    true
 }
 
 #[cfg(test)]
@@ -186,20 +276,21 @@ mod tests {
             Some(OsString::from("/srv/state/cli")),
             Some(OsString::from("/xdg/state")),
             Some(OsString::from("/home/app")),
-            Path::new("/tmp"),
         );
-        assert_eq!(dir, PathBuf::from("/srv/state/cli"));
+        assert_eq!(dir, Some(PathBuf::from("/srv/state/cli")));
     }
 
     #[test]
     fn history_dir_uses_an_absolute_xdg_state_home() {
+        // Build the fixture natively: "/xdg/state" has no drive on Windows and is
+        // therefore not absolute there, so the resolver would skip it.
+        let xdg = std::env::temp_dir().join("xdg-state");
         let dir = history_dir_from(
             None,
-            Some(OsString::from("/xdg/state")),
+            Some(xdg.clone().into_os_string()),
             Some(OsString::from("/home/app")),
-            Path::new("/tmp"),
         );
-        assert_eq!(dir, PathBuf::from("/xdg/state/redbcli"));
+        assert_eq!(dir, Some(xdg.join("redbcli")));
     }
 
     #[test]
@@ -209,9 +300,8 @@ mod tests {
             None,
             Some(OsString::from("relative/state")),
             Some(OsString::from("/home/app")),
-            Path::new("/tmp"),
         );
-        assert_eq!(dir, PathBuf::from("/home/app/.local/state/redbcli"));
+        assert_eq!(dir, Some(PathBuf::from("/home/app/.local/state/redbcli")));
     }
 
     #[test]
@@ -220,23 +310,21 @@ mod tests {
             Some(OsString::new()),
             Some(OsString::new()),
             Some(OsString::new()),
-            Path::new("/tmp"),
         );
-        assert_eq!(dir, PathBuf::from("/tmp/redbcli"));
+        assert_eq!(dir, None);
     }
 
     #[test]
-    fn history_dir_falls_back_to_home_then_temp() {
-        let with_home = history_dir_from(
-            None,
-            None,
-            Some(OsString::from("/home/app")),
-            Path::new("/tmp"),
+    fn history_dir_falls_back_to_home_and_then_stops() {
+        let with_home = history_dir_from(None, None, Some(OsString::from("/home/app")));
+        assert_eq!(
+            with_home,
+            Some(PathBuf::from("/home/app/.local/state/redbcli"))
         );
-        assert_eq!(with_home, PathBuf::from("/home/app/.local/state/redbcli"));
 
-        let without_home = history_dir_from(None, None, None, Path::new("/tmp"));
-        assert_eq!(without_home, PathBuf::from("/tmp/redbcli"));
+        // No shared temp directory: a predictable path there can be pre-created by
+        // another user, so history is disabled instead.
+        assert_eq!(history_dir_from(None, None, None), None);
     }
 
     #[test]
@@ -261,6 +349,72 @@ mod tests {
         std::fs::write(&blocker, "not a directory").unwrap();
 
         assert!(prepare_history_file(&blocker.join("redbcli")).is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn prepare_history_file_creates_the_file_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join("state");
+        let file = prepare_history_file(&dir).expect("history file should be created");
+
+        let dir_mode = std::fs::metadata(&dir).unwrap().permissions().mode() & 0o777;
+        let file_mode = std::fs::metadata(&file).unwrap().permissions().mode() & 0o777;
+        // 0700 & !umask, and 0600 regardless of umask: no group/other access.
+        assert_eq!(dir_mode & 0o077, 0, "directory mode {dir_mode:o}");
+        assert_eq!(file_mode & 0o077, 0, "file mode {file_mode:o}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn prepare_history_file_refuses_a_world_writable_directory() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join("shared");
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o777)).unwrap();
+
+        // Another user could add or replace the history in a 0777 directory.
+        assert!(prepare_history_file(&dir).is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn prepare_history_file_refuses_a_symlinked_history_file() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join("state");
+        std::fs::create_dir(&dir).unwrap();
+        let target = root.path().join("elsewhere.txt");
+        std::fs::write(&target, "").unwrap();
+        std::os::unix::fs::symlink(&target, dir.join("history.txt")).unwrap();
+
+        assert!(prepare_history_file(&dir).is_none());
+        // The target is untouched: the refusal must not write through the link.
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn prepare_history_file_tightens_a_legacy_file() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join("state");
+        std::fs::create_dir(&dir).unwrap();
+        // The directory itself is ours and private; only the file is legacy.
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let file = dir.join("history.txt");
+        std::fs::write(&file, "set db.redb\n").unwrap();
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        assert_eq!(prepare_history_file(&dir), Some(file.clone()));
+        let mode = std::fs::metadata(&file).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode & 0o077, 0, "file mode {mode:o}");
+        // Reused, not truncated.
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "set db.redb\n");
     }
 
     #[test]

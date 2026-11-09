@@ -24,7 +24,7 @@ fn main() -> Result<(), String> {
     if let Some(db_path) = parse_flags.path {
         clistatus.filepath = db_path;
     }
-    let history_file = redbcli::prepare_history_file(&redbcli::history_dir());
+    let history_file = redbcli::history_dir().and_then(|dir| redbcli::prepare_history_file(&dir));
 
     let mut rl = DefaultEditor::new().unwrap();
     if let Some(file_history) = &history_file {
