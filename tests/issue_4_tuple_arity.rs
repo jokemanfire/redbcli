@@ -4,8 +4,8 @@
 //! keys), so `Table<u32, (u128,u128,u128,u128,u128)>` was reported as
 //! undecodable. These tests pin the widened, documented matrix:
 //!
-//! * base keys: scalars/`&str`/`String`/`&[u8]` with 2-6 element tuple values;
-//! * tuple keys: 2-3 element homogeneous tuples, with 2-3 element tuple values;
+//! * base keys: scalars/`&str`/`String`/`&[u8]` with 4-6 element tuple values;
+//! * tuple keys: 2-3 element homogeneous tuples, with scalar/string/byte values;
 //! * everything wider stays a clear "cannot decode yet" error.
 
 use redb::{Database, TableDefinition};
@@ -21,6 +21,11 @@ const SEVEN: TableDefinition<u32, (u128, u128, u128, u128, u128, u128, u128)> =
 #[allow(clippy::type_complexity)]
 const TWO_KEY_FIVE_VALUE: TableDefinition<(u64, u64), (u32, u32, u32, u32, u32)> =
     TableDefinition::new("two_key_five_value");
+// The matrix has a hole here: 2-3 element tuple values are only registered under
+// tuple keys, so a scalar key with a small tuple value still fails. Pinned so the
+// README's "4-6" is testable rather than prose.
+const PAIR_VALUE: TableDefinition<u32, (u64, u64)> = TableDefinition::new("pair_value");
+const FLOAT_VALUE: TableDefinition<u32, f32> = TableDefinition::new("float_value");
 
 fn make_db() -> (tempfile::TempDir, CommonDbManager) {
     let dir = tempfile::tempdir().expect("create temp dir failed");
@@ -42,6 +47,14 @@ fn make_db() -> (tempfile::TempDir, CommonDbManager) {
         let mut t = txn.open_table(SEVEN).unwrap();
         t.insert(1u32, (1u128, 2u128, 3u128, 4u128, 5u128, 6u128, 7u128))
             .unwrap();
+    }
+    {
+        let mut t = txn.open_table(PAIR_VALUE).unwrap();
+        t.insert(1u32, (2u64, 3u64)).unwrap();
+    }
+    {
+        let mut t = txn.open_table(FLOAT_VALUE).unwrap();
+        t.insert(1u32, 1.5f32).unwrap();
     }
     {
         // Tuple keys keep the narrower value coverage: 5-element values are only
@@ -132,5 +145,21 @@ fn arity_seven_and_tuple_keys_with_wide_values_stay_unsupported() {
         .get_all_dyn("two_key_five_value")
         .unwrap_err()
         .to_string();
+    assert!(err.contains("cannot decode yet"), "unexpected error: {err}");
+}
+
+#[test]
+fn small_tuple_values_under_scalar_keys_are_a_documented_gap() {
+    let (_dir, dbm) = make_db();
+
+    // Reads for a scalar key + float value, as the matrix says.
+    let (desc, rows) = dbm
+        .get_all_dyn("float_value")
+        .expect("float values are registered");
+    assert_eq!(desc.value, "f32");
+    assert_eq!(rows, vec![("1".to_string(), "1.5".to_string())]);
+
+    // 2-3 element tuple values are only registered under tuple keys today.
+    let err = dbm.get_all_dyn("pair_value").unwrap_err().to_string();
     assert!(err.contains("cannot decode yet"), "unexpected error: {err}");
 }

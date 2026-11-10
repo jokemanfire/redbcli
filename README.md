@@ -22,11 +22,13 @@ error message you get for anything outside it:
 
 | Key | Value |
 | --- | --- |
-| `u8`..`u128`, `i8`..`i128`, `f32`, `f64`, `bool`, `char`, `()`, `&str`, `String`, `&[u8]` | any of the same scalar/string/byte types, or a homogeneous 2-6 element tuple of the non-float ones, e.g. `(u128, u128, u128, u128, u128)` |
-| 2-3 element homogeneous tuples of the non-float types | scalars/strings/bytes, or a homogeneous 2-3 element tuple |
+| `u8`..`u128`, `i8`..`i128`, `bool`, `char`, `()`, `&str`, `String`, `&[u8]` | any of the same scalar/string/byte types (values may also be `f32`/`f64`), or a homogeneous 4-6 element tuple of the non-float ones, e.g. `(u128, u128, u128, u128, u128)` |
+| 2-3 element homogeneous tuples of the non-float types | scalars/strings/bytes (no floats, no tuple values) |
 
-Not supported yet: tuple keys of 4+ elements, 7+ element tuple values, wide tuple
-values under tuple keys, and heterogeneous or nested tuples. Issue #4 tracks the
+Not supported yet: float keys, tuple keys of 4+ elements, 2-3 element tuple
+values under non-tuple keys (they are only registered from arity 4 up), 7+
+element tuple values, tuple values under tuple keys, and heterogeneous or nested
+tuples. Issue #4 tracks the
 design; `docs/` is the place to look before extending the registries.
 
 ## Installation

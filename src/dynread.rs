@@ -1147,7 +1147,7 @@ pub fn read_table_dyn(
     Err(DynError::UnsupportedTableType {
         detail: format!(
             "table '{name}' has key/value types Table<{key_name}, {value_name}> that redbcli cannot decode yet; \
-             supported: registered scalar/string/byte-slice types; homogeneous 2-3-element tuple keys with non-tuple values; homogeneous 4-6 element tuple values only with non-tuple keys"
+             supported: registered scalar/string/byte-slice types; homogeneous 2-3-element tuple keys with non-tuple values; homogeneous 4-6 element tuple values only with non-tuple keys — see https://github.com/jokemanfire/redbcli/blob/master/README.md#supported-types"
         ),
     })
 }
@@ -1254,7 +1254,7 @@ pub fn write_table_dyn(
     Err(DynError::UnsupportedTableType {
         detail: format!(
             "table '{name}' has key/value types Table<{key_name}, {value_name}> that cannot be edited yet; \
-             supported: scalars, &str/String, &[u8]/Vec<u8>, homogeneous tuples of 2-3 elements, and 4-6 element tuple values"
+             supported: scalars, &str/String, &[u8]/Vec<u8>, homogeneous tuples of 2-3 elements, and 4-6 element tuple values — see https://github.com/jokemanfire/redbcli/blob/master/README.md#supported-types"
         ),
     })
 }
