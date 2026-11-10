@@ -11,7 +11,6 @@ use redbcli::{write_io_error, write_io_success, KvInfo, TableInfo, TableMeta};
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
 use std::io::Write;
-use std::path::PathBuf;
 #[derive(Default)]
 pub struct CliStatus {
     tablename: String,
@@ -25,21 +24,13 @@ fn main() -> Result<(), String> {
     if let Some(db_path) = parse_flags.path {
         clistatus.filepath = db_path;
     }
-    let history_path = PathBuf::from("/tmp/redbcli");
-    if !history_path.exists() {
-        std::fs::create_dir_all(&history_path).expect("create history dir failed");
-    }
-    let file_history = history_path.join("history.txt");
-    //check history file
-    {
-        if !file_history.exists() {
-            std::fs::File::create(&file_history).expect("create history file failed");
-        }
-    }
+    let history_file = redbcli::history_dir().and_then(|dir| redbcli::prepare_history_file(&dir));
 
     let mut rl = DefaultEditor::new().unwrap();
-    if rl.load_history(&file_history).is_err() {
-        println!("No previous history.");
+    if let Some(file_history) = &history_file {
+        if rl.load_history(file_history).is_err() {
+            println!("No previous history.");
+        }
     }
     if !clistatus.filepath.is_empty() {
         clistatus
@@ -89,7 +80,16 @@ fn main() -> Result<(), String> {
             }
         }
     }
-    let _ = rl.save_history(&file_history);
+    if let Some(file_history) = &history_file {
+        // A silent discard here is how a read-only history file loses a session's
+        // entries without the user ever learning why.
+        if let Err(err) = rl.save_history(file_history) {
+            eprintln!(
+                "warning: cannot save history to {}: {err}",
+                file_history.display()
+            );
+        }
+    }
     Ok(())
 }
 
