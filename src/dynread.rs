@@ -136,6 +136,18 @@ impl<A: Debug, B: Debug, C: Debug, D: Debug> FmtCell for (A, B, C, D) {
     }
 }
 
+impl<A: Debug, B: Debug, C: Debug, D: Debug, E: Debug> FmtCell for (A, B, C, D, E) {
+    fn fmt_cell(&self) -> String {
+        format!("{self:?}")
+    }
+}
+
+impl<A: Debug, B: Debug, C: Debug, D: Debug, E: Debug, F: Debug> FmtCell for (A, B, C, D, E, F) {
+    fn fmt_cell(&self) -> String {
+        format!("{self:?}")
+    }
+}
+
 pub fn bytes_to_hex(data: &[u8]) -> String {
     let mut out = String::with_capacity(2 + data.len() * 2);
     out.push_str("0x");
@@ -574,13 +586,340 @@ impl_owned_tuple4!(&'static [u8], Vec<u8>, |s| (
     s.3.as_slice()
 ));
 
+macro_rules! impl_owned_tuple5 {
+    ($k:ty, $o:ty, |$s:ident| $arg:expr) => {
+        impl OwnedCell<($k, $k, $k, $k, $k)> for ($o, $o, $o, $o, $o) {
+            fn parse_cell(text: &str) -> Result<Self, String> {
+                let inner = text
+                    .trim()
+                    .strip_prefix('(')
+                    .and_then(|x| x.strip_suffix(')'))
+                    .ok_or_else(|| {
+                        format!("expected tuple like (a, b, c, d, e), got '{}'", text.trim())
+                    })?;
+                let elems = split_top_level(inner)?;
+                if elems.len() != 5 {
+                    return Err(format!(
+                        "expected 5 tuple elements, got {} in '{text}'",
+                        elems.len()
+                    ));
+                }
+                Ok((
+                    <$o as OwnedCell<$k>>::parse_elem(elems[0].trim())?,
+                    <$o as OwnedCell<$k>>::parse_elem(elems[1].trim())?,
+                    <$o as OwnedCell<$k>>::parse_elem(elems[2].trim())?,
+                    <$o as OwnedCell<$k>>::parse_elem(elems[3].trim())?,
+                    <$o as OwnedCell<$k>>::parse_elem(elems[4].trim())?,
+                ))
+            }
+            fn parse_elem(text: &str) -> Result<Self, String> {
+                <($o, $o, $o, $o, $o) as OwnedCell<($k, $k, $k, $k, $k)>>::parse_cell(text)
+            }
+            fn as_arg(&self) -> <($k, $k, $k, $k, $k) as Value>::SelfType<'_> {
+                let $s = self;
+                $arg
+            }
+        }
+    };
+}
+
+impl_owned_tuple5!(u8, u8, |s| (s.0, s.1, s.2, s.3, s.4));
+impl_owned_tuple5!(u16, u16, |s| (s.0, s.1, s.2, s.3, s.4));
+impl_owned_tuple5!(u32, u32, |s| (s.0, s.1, s.2, s.3, s.4));
+impl_owned_tuple5!(u64, u64, |s| (s.0, s.1, s.2, s.3, s.4));
+impl_owned_tuple5!(u128, u128, |s| (s.0, s.1, s.2, s.3, s.4));
+impl_owned_tuple5!(i8, i8, |s| (s.0, s.1, s.2, s.3, s.4));
+impl_owned_tuple5!(i16, i16, |s| (s.0, s.1, s.2, s.3, s.4));
+impl_owned_tuple5!(i32, i32, |s| (s.0, s.1, s.2, s.3, s.4));
+impl_owned_tuple5!(i64, i64, |s| (s.0, s.1, s.2, s.3, s.4));
+impl_owned_tuple5!(i128, i128, |s| (s.0, s.1, s.2, s.3, s.4));
+impl_owned_tuple5!(bool, bool, |s| (s.0, s.1, s.2, s.3, s.4));
+impl_owned_tuple5!(char, char, |s| (s.0, s.1, s.2, s.3, s.4));
+impl_owned_tuple5!((), (), |s| (s.0, s.1, s.2, s.3, s.4));
+impl_owned_tuple5!(&'static str, String, |s| (
+    s.0.as_str(),
+    s.1.as_str(),
+    s.2.as_str(),
+    s.3.as_str(),
+    s.4.as_str()
+));
+impl_owned_tuple5!(String, String, |s| (
+    s.0.clone(),
+    s.1.clone(),
+    s.2.clone(),
+    s.3.clone(),
+    s.4.clone()
+));
+impl_owned_tuple5!(&'static [u8], Vec<u8>, |s| (
+    s.0.as_slice(),
+    s.1.as_slice(),
+    s.2.as_slice(),
+    s.3.as_slice(),
+    s.4.as_slice()
+));
+
+macro_rules! impl_owned_tuple6 {
+    ($k:ty, $o:ty, |$s:ident| $arg:expr) => {
+        impl OwnedCell<($k, $k, $k, $k, $k, $k)> for ($o, $o, $o, $o, $o, $o) {
+            fn parse_cell(text: &str) -> Result<Self, String> {
+                let inner = text
+                    .trim()
+                    .strip_prefix('(')
+                    .and_then(|x| x.strip_suffix(')'))
+                    .ok_or_else(|| {
+                        format!(
+                            "expected tuple like (a, b, c, d, e, f), got '{}'",
+                            text.trim()
+                        )
+                    })?;
+                let elems = split_top_level(inner)?;
+                if elems.len() != 6 {
+                    return Err(format!(
+                        "expected 6 tuple elements, got {} in '{text}'",
+                        elems.len()
+                    ));
+                }
+                Ok((
+                    <$o as OwnedCell<$k>>::parse_elem(elems[0].trim())?,
+                    <$o as OwnedCell<$k>>::parse_elem(elems[1].trim())?,
+                    <$o as OwnedCell<$k>>::parse_elem(elems[2].trim())?,
+                    <$o as OwnedCell<$k>>::parse_elem(elems[3].trim())?,
+                    <$o as OwnedCell<$k>>::parse_elem(elems[4].trim())?,
+                    <$o as OwnedCell<$k>>::parse_elem(elems[5].trim())?,
+                ))
+            }
+            fn parse_elem(text: &str) -> Result<Self, String> {
+                <($o, $o, $o, $o, $o, $o) as OwnedCell<($k, $k, $k, $k, $k, $k)>>::parse_cell(text)
+            }
+            fn as_arg(&self) -> <($k, $k, $k, $k, $k, $k) as Value>::SelfType<'_> {
+                let $s = self;
+                $arg
+            }
+        }
+    };
+}
+
+impl_owned_tuple6!(u8, u8, |s| (s.0, s.1, s.2, s.3, s.4, s.5));
+impl_owned_tuple6!(u16, u16, |s| (s.0, s.1, s.2, s.3, s.4, s.5));
+impl_owned_tuple6!(u32, u32, |s| (s.0, s.1, s.2, s.3, s.4, s.5));
+impl_owned_tuple6!(u64, u64, |s| (s.0, s.1, s.2, s.3, s.4, s.5));
+impl_owned_tuple6!(u128, u128, |s| (s.0, s.1, s.2, s.3, s.4, s.5));
+impl_owned_tuple6!(i8, i8, |s| (s.0, s.1, s.2, s.3, s.4, s.5));
+impl_owned_tuple6!(i16, i16, |s| (s.0, s.1, s.2, s.3, s.4, s.5));
+impl_owned_tuple6!(i32, i32, |s| (s.0, s.1, s.2, s.3, s.4, s.5));
+impl_owned_tuple6!(i64, i64, |s| (s.0, s.1, s.2, s.3, s.4, s.5));
+impl_owned_tuple6!(i128, i128, |s| (s.0, s.1, s.2, s.3, s.4, s.5));
+impl_owned_tuple6!(bool, bool, |s| (s.0, s.1, s.2, s.3, s.4, s.5));
+impl_owned_tuple6!(char, char, |s| (s.0, s.1, s.2, s.3, s.4, s.5));
+impl_owned_tuple6!((), (), |s| (s.0, s.1, s.2, s.3, s.4, s.5));
+impl_owned_tuple6!(&'static str, String, |s| (
+    s.0.as_str(),
+    s.1.as_str(),
+    s.2.as_str(),
+    s.3.as_str(),
+    s.4.as_str(),
+    s.5.as_str()
+));
+impl_owned_tuple6!(String, String, |s| (
+    s.0.clone(),
+    s.1.clone(),
+    s.2.clone(),
+    s.3.clone(),
+    s.4.clone(),
+    s.5.clone()
+));
+impl_owned_tuple6!(&'static [u8], Vec<u8>, |s| (
+    s.0.as_slice(),
+    s.1.as_slice(),
+    s.2.as_slice(),
+    s.3.as_slice(),
+    s.4.as_slice(),
+    s.5.as_slice()
+));
+
+macro_rules! registry_values5 {
+    ($pair:ident, $kt:ty, $ko:ty) => {
+        $pair!($kt, (u8, u8, u8, u8, u8), $ko, (u8, u8, u8, u8, u8));
+        $pair!(
+            $kt,
+            (u16, u16, u16, u16, u16),
+            $ko,
+            (u16, u16, u16, u16, u16)
+        );
+        $pair!(
+            $kt,
+            (u32, u32, u32, u32, u32),
+            $ko,
+            (u32, u32, u32, u32, u32)
+        );
+        $pair!(
+            $kt,
+            (u64, u64, u64, u64, u64),
+            $ko,
+            (u64, u64, u64, u64, u64)
+        );
+        $pair!(
+            $kt,
+            (u128, u128, u128, u128, u128),
+            $ko,
+            (u128, u128, u128, u128, u128)
+        );
+        $pair!($kt, (i8, i8, i8, i8, i8), $ko, (i8, i8, i8, i8, i8));
+        $pair!(
+            $kt,
+            (i16, i16, i16, i16, i16),
+            $ko,
+            (i16, i16, i16, i16, i16)
+        );
+        $pair!(
+            $kt,
+            (i32, i32, i32, i32, i32),
+            $ko,
+            (i32, i32, i32, i32, i32)
+        );
+        $pair!(
+            $kt,
+            (i64, i64, i64, i64, i64),
+            $ko,
+            (i64, i64, i64, i64, i64)
+        );
+        $pair!(
+            $kt,
+            (i128, i128, i128, i128, i128),
+            $ko,
+            (i128, i128, i128, i128, i128)
+        );
+        $pair!(
+            $kt,
+            (bool, bool, bool, bool, bool),
+            $ko,
+            (bool, bool, bool, bool, bool)
+        );
+        $pair!(
+            $kt,
+            (char, char, char, char, char),
+            $ko,
+            (char, char, char, char, char)
+        );
+        $pair!($kt, ((), (), (), (), ()), $ko, ((), (), (), (), ()));
+        $pair!(
+            $kt,
+            (&str, &str, &str, &str, &str),
+            $ko,
+            (String, String, String, String, String)
+        );
+        $pair!(
+            $kt,
+            (String, String, String, String, String),
+            $ko,
+            (String, String, String, String, String)
+        );
+        $pair!(
+            $kt,
+            (&[u8], &[u8], &[u8], &[u8], &[u8]),
+            $ko,
+            (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)
+        );
+    };
+}
+
+macro_rules! registry_values6 {
+    ($pair:ident, $kt:ty, $ko:ty) => {
+        $pair!($kt, (u8, u8, u8, u8, u8, u8), $ko, (u8, u8, u8, u8, u8, u8));
+        $pair!(
+            $kt,
+            (u16, u16, u16, u16, u16, u16),
+            $ko,
+            (u16, u16, u16, u16, u16, u16)
+        );
+        $pair!(
+            $kt,
+            (u32, u32, u32, u32, u32, u32),
+            $ko,
+            (u32, u32, u32, u32, u32, u32)
+        );
+        $pair!(
+            $kt,
+            (u64, u64, u64, u64, u64, u64),
+            $ko,
+            (u64, u64, u64, u64, u64, u64)
+        );
+        $pair!(
+            $kt,
+            (u128, u128, u128, u128, u128, u128),
+            $ko,
+            (u128, u128, u128, u128, u128, u128)
+        );
+        $pair!($kt, (i8, i8, i8, i8, i8, i8), $ko, (i8, i8, i8, i8, i8, i8));
+        $pair!(
+            $kt,
+            (i16, i16, i16, i16, i16, i16),
+            $ko,
+            (i16, i16, i16, i16, i16, i16)
+        );
+        $pair!(
+            $kt,
+            (i32, i32, i32, i32, i32, i32),
+            $ko,
+            (i32, i32, i32, i32, i32, i32)
+        );
+        $pair!(
+            $kt,
+            (i64, i64, i64, i64, i64, i64),
+            $ko,
+            (i64, i64, i64, i64, i64, i64)
+        );
+        $pair!(
+            $kt,
+            (i128, i128, i128, i128, i128, i128),
+            $ko,
+            (i128, i128, i128, i128, i128, i128)
+        );
+        $pair!(
+            $kt,
+            (bool, bool, bool, bool, bool, bool),
+            $ko,
+            (bool, bool, bool, bool, bool, bool)
+        );
+        $pair!(
+            $kt,
+            (char, char, char, char, char, char),
+            $ko,
+            (char, char, char, char, char, char)
+        );
+        $pair!($kt, ((), (), (), (), (), ()), $ko, ((), (), (), (), (), ()));
+        $pair!(
+            $kt,
+            (&str, &str, &str, &str, &str, &str),
+            $ko,
+            (String, String, String, String, String, String)
+        );
+        $pair!(
+            $kt,
+            (String, String, String, String, String, String),
+            $ko,
+            (String, String, String, String, String, String)
+        );
+        $pair!(
+            $kt,
+            (&[u8], &[u8], &[u8], &[u8], &[u8], &[u8]),
+            $ko,
+            (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)
+        );
+    };
+}
+
 // ---------------------------------------------------------------------------
 // Typed read/write dispatch over the registered type combinations
 // ---------------------------------------------------------------------------
 
 macro_rules! registry_keys {
-    ($values:ident, $values4:ident) => {
-        // Base (non-tuple) keys also support 4-element tuple values.
+    ($values:ident, $values4:ident, $values5:ident, $values6:ident) => {
+        // Base (non-tuple) keys also support 4-, 5- and 6-element tuple values.
+        // Tuple keys stay on the 2-3 element registry: the cross product is
+        // what makes rustc monomorphization explode, and a wide tuple key is
+        // rare enough that the narrower coverage is the better trade.
+        // Keep this list in step with README's support matrix.
         $values!(u8, u8);
         $values!(u16, u16);
         $values!(u32, u32);
@@ -613,6 +952,38 @@ macro_rules! registry_keys {
         $values4!(&str, String);
         $values4!(String, String);
         $values4!(&[u8], Vec<u8>);
+        $values5!(u8, u8);
+        $values5!(u16, u16);
+        $values5!(u32, u32);
+        $values5!(u64, u64);
+        $values5!(u128, u128);
+        $values5!(i8, i8);
+        $values5!(i16, i16);
+        $values5!(i32, i32);
+        $values5!(i64, i64);
+        $values5!(i128, i128);
+        $values5!(bool, bool);
+        $values5!(char, char);
+        $values5!((), ());
+        $values5!(&str, String);
+        $values5!(String, String);
+        $values5!(&[u8], Vec<u8>);
+        $values6!(u8, u8);
+        $values6!(u16, u16);
+        $values6!(u32, u32);
+        $values6!(u64, u64);
+        $values6!(u128, u128);
+        $values6!(i8, i8);
+        $values6!(i16, i16);
+        $values6!(i32, i32);
+        $values6!(i64, i64);
+        $values6!(i128, i128);
+        $values6!(bool, bool);
+        $values6!(char, char);
+        $values6!((), ());
+        $values6!(&str, String);
+        $values6!(String, String);
+        $values6!(&[u8], Vec<u8>);
         // Tuple keys keep their existing value coverage.
         $values!((u8, u8), (u8, u8));
         $values!((u16, u16), (u16, u16));
@@ -761,12 +1132,22 @@ pub fn read_table_dyn(
             registry_values4!(read_pair, $kt, $ko);
         };
     }
-    registry_keys!(read_values, read_values4);
+    macro_rules! read_values5 {
+        ($kt:ty, $ko:ty) => {
+            registry_values5!(read_pair, $kt, $ko);
+        };
+    }
+    macro_rules! read_values6 {
+        ($kt:ty, $ko:ty) => {
+            registry_values6!(read_pair, $kt, $ko);
+        };
+    }
+    registry_keys!(read_values, read_values4, read_values5, read_values6);
 
     Err(DynError::UnsupportedTableType {
         detail: format!(
             "table '{name}' has key/value types Table<{key_name}, {value_name}> that redbcli cannot decode yet; \
-             supported: registered scalar/string/byte-slice types; homogeneous 2-3-element tuple keys with non-tuple values; homogeneous 4-element tuple values only with non-tuple keys"
+             supported: registered scalar/string/byte-slice types; homogeneous 2-3-element tuple keys with non-tuple values; homogeneous 4-6 element tuple values only with non-tuple keys"
         ),
     })
 }
@@ -858,12 +1239,22 @@ pub fn write_table_dyn(
             registry_values4!(write_pair, $kt, $ko);
         };
     }
-    registry_keys!(write_values, write_values4);
+    macro_rules! write_values5 {
+        ($kt:ty, $ko:ty) => {
+            registry_values5!(write_pair, $kt, $ko);
+        };
+    }
+    macro_rules! write_values6 {
+        ($kt:ty, $ko:ty) => {
+            registry_values6!(write_pair, $kt, $ko);
+        };
+    }
+    registry_keys!(write_values, write_values4, write_values5, write_values6);
 
     Err(DynError::UnsupportedTableType {
         detail: format!(
             "table '{name}' has key/value types Table<{key_name}, {value_name}> that cannot be edited yet; \
-             supported: scalars, &str/String, &[u8]/Vec<u8>, homogeneous tuples of 2-3 elements, and 4-element tuple values"
+             supported: scalars, &str/String, &[u8]/Vec<u8>, homogeneous tuples of 2-3 elements, and 4-6 element tuple values"
         ),
     })
 }
@@ -910,7 +1301,7 @@ mod tests {
         assert!(<bool as OC<bool>>::parse_cell("yes").is_err());
         assert!(<bool as OC<bool>>::parse_cell("true").unwrap());
         assert_eq!(<f64 as OC<f64>>::parse_cell("3.5").unwrap(), 3.5);
-        assert_eq!(<() as OC<()>>::parse_cell("()").unwrap(), ());
+        assert!(<() as OC<()>>::parse_cell("()").is_ok());
         assert!(<() as OC<()>>::parse_cell("( )").is_err());
     }
 

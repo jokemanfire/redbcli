@@ -13,6 +13,22 @@ Need vim
 - Query table information, including each table's key/value types
 - Create and delete tables
 
+## Supported types
+
+redb only exposes typed table access (`TableDefinition<K, V>`), so redbcli has to
+instantiate a reader/writer per `(K, V)` pair. The matrix is deliberately bounded
+— every entry costs compile time and binary size — and it is enforced by the
+error message you get for anything outside it:
+
+| Key | Value |
+| --- | --- |
+| `u8`..`u128`, `i8`..`i128`, `f32`, `f64`, `bool`, `char`, `()`, `&str`, `String`, `&[u8]` | any of the same scalar/string/byte types, or a homogeneous 2-6 element tuple of the non-float ones, e.g. `(u128, u128, u128, u128, u128)` |
+| 2-3 element homogeneous tuples of the non-float types | scalars/strings/bytes, or a homogeneous 2-3 element tuple |
+
+Not supported yet: tuple keys of 4+ elements, 7+ element tuple values, wide tuple
+values under tuple keys, and heterogeneous or nested tuples. Issue #4 tracks the
+design; `docs/` is the place to look before extending the registries.
+
 ## Installation
 
 1. Ensure you have Rust and Cargo installed.
