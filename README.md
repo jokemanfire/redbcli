@@ -9,7 +9,7 @@ Need vim
 - Set database path
 - Use specific tables
 - Browse tables of any key/value type (integers, tuples such as `Table<(u128,u128), u64>`, strings, byte slices, etc.)
-- Edit table data of any supported type (values are shown and edited as typed strings: decimals, `(a, b)` tuples, `0x` hex for bytes)
+- Edit table data of any supported type (values are shown and edited as typed strings: decimals, `(a, b)` tuples, `0x` hex for bytes — a byte element *inside* a tuple is the exception, see the matrix below)
 - Query table information, including each table's key/value types
 - Create and delete tables
 
@@ -30,6 +30,15 @@ values under non-tuple keys (they are only registered from arity 4 up), 7+
 element tuple values, tuple values under tuple keys, and heterogeneous or nested
 tuples. Issue #4 tracks the
 design; `docs/` is the place to look before extending the registries.
+
+Two rendering details the matrix does not show:
+
+- a byte value is shown and edited as `0x` hex when it is the whole value, but as
+  a decimal list (`[97, 97]`) when it is an element of a tuple, and each form
+  rejects the other's text — issue #9 tracks making the two agree;
+- tuple elements are `Debug`-formatted, so a string element is printed and parsed
+  quoted (`("a,b", "c")`); pasting such a quoted element into a *scalar* string
+  column stores the quotes as part of the value, so edit that column bare.
 
 ## Installation
 
