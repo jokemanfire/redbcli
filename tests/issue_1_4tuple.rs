@@ -3,15 +3,13 @@
 //! These used to fail with
 //! `DB corrupted: table 'ranges' has unsupported key/value types Table<u32, (u128,u128,u128,u128)>`.
 
-use redb::{Database, ReadableDatabase, TableDefinition};
+use redb::{Database, TableDefinition};
 use redbcli::redbcontrol::CommonDbManager;
 
 const RANGES: TableDefinition<u32, (u128, u128, u128, u128)> = TableDefinition::new("ranges");
 const STR_TO_QUAD: TableDefinition<&str, (u128, u128, u128, u128)> =
     TableDefinition::new("str_to_quad");
 const QUAD_TO_U64: TableDefinition<(u64, u64, u64, u64), u64> = TableDefinition::new("quad_to_u64");
-const TOO_WIDE: TableDefinition<u32, (u128, u128, u128, u128, u128)> =
-    TableDefinition::new("too_wide");
 
 fn make_db() -> (tempfile::TempDir, CommonDbManager) {
     let dir = tempfile::tempdir().expect("create temp dir failed");
@@ -32,10 +30,6 @@ fn make_db() -> (tempfile::TempDir, CommonDbManager) {
         // only proves the reader reports a clear, non-"corrupted" error.
         let mut t = txn.open_table(QUAD_TO_U64).unwrap();
         t.insert((1u64, 2u64, 3u64, 4u64), 99u64).unwrap();
-    }
-    {
-        let mut t = txn.open_table(TOO_WIDE).unwrap();
-        t.insert(1u32, (1u128, 2u128, 3u128, 4u128, 5u128)).unwrap();
     }
     txn.commit().unwrap();
     drop(db);
@@ -107,7 +101,6 @@ fn unsupported_types_report_a_clear_error() {
         "error should name the actual type: {err}"
     );
 
-    // 5-element tuple values are beyond the supported arity.
-    let err = dbm.get_all_dyn("too_wide").unwrap_err().to_string();
-    assert!(err.contains("cannot decode yet"), "unexpected error: {err}");
+    // 5- and 6-element tuple values are supported now; issue_4_tuple_arity.rs
+    // covers them and the arity that is still outside the registry.
 }
