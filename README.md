@@ -9,7 +9,7 @@ Need vim
 - Set database path
 - Use specific tables
 - Browse tables of any key/value type (integers, tuples such as `Table<(u128,u128), u64>`, strings, byte slices, etc.)
-- Edit table data of any supported type (values are shown and edited as typed strings: decimals, `(a, b)` tuples, `0x` hex for bytes — a byte element *inside* a tuple is the exception, see the matrix below)
+- Edit table data of any supported type (values are shown and edited as typed strings: decimals, `(a, b)` tuples, `0x` hex for bytes)
 - Query table information, including each table's key/value types
 - Create and delete tables
 
@@ -31,14 +31,16 @@ element tuple values, tuple values under tuple keys, and heterogeneous or nested
 tuples. Issue #4 tracks the
 design; `docs/` is the place to look before extending the registries.
 
-Two rendering details the matrix does not show:
+How values are spelled — one form per type, and every printed cell can be pasted
+back:
 
-- a byte value is shown and edited as `0x` hex when it is the whole value, but as
-  a decimal list (`[97, 97]`) when it is an element of a tuple, and each form
-  rejects the other's text — issue #9 tracks making the two agree;
-- tuple elements are `Debug`-formatted, so a string element is printed and parsed
-  quoted (`("a,b", "c")`); pasting such a quoted element into a *scalar* string
-  column stores the quotes as part of the value, so edit that column bare.
+- a byte value is `0x` hex everywhere, as a whole value (`0x6161`) and as a tuple
+  element (`(0x6161, 0x6262)`); the decimal list form (`[97, 97]`) is still
+  accepted when editing, so cells written by older versions keep parsing;
+- a string is bare as a whole value (`hello`) and quoted inside a tuple
+  (`("a,b", "c")`), where the quotes are what keeps a comma inside one element.
+  Both forms are accepted in both places and the quotes are never stored:
+  pasting `"hello"` into a scalar string column stores `hello`.
 
 ## Installation
 
