@@ -39,8 +39,12 @@ back:
   accepted when editing, so cells written by older versions keep parsing;
 - a string is bare as a whole value (`hello`) and quoted inside a tuple
   (`("a,b", "c")`), where the quotes are what keeps a comma inside one element.
-  Both forms are accepted in both places and the quotes are never stored:
-  pasting `"hello"` into a scalar string column stores `hello`.
+  Both forms are accepted in both places; what is removed is the *outer quote
+  delimiter*: pasting `"hello"` into a scalar string column stores `hello`,
+  while quotes inside bare text (`a"b`, `don't`) stay part of the value. A
+  stored value that itself begins and ends with `"` is printed quoted and
+  escaped (`"\"hello\""`) so that saving the table without edits cannot
+  change it.
 
 ## Installation
 

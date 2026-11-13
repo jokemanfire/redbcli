@@ -102,14 +102,38 @@ impl_fmt_cell_debug!(
 
 impl FmtCell for &str {
     fn fmt_cell(&self) -> String {
-        self.to_string()
+        fmt_str_cell(self)
     }
 }
 
 impl FmtCell for String {
     fn fmt_cell(&self) -> String {
-        self.clone()
+        fmt_str_cell(self)
     }
+}
+
+/// A scalar string cell prints its text verbatim, with one exception: text that
+/// starts and ends with `"` would be read back as a quoted string, so it is
+/// printed quoted and escaped instead. Without this a no-op save of a stored
+/// `"hello"` rewrites the value to `hello`; for a key it leaves the old row
+/// behind, because `write_rows` removes rows by formatting each key and parsing
+/// it back.
+fn fmt_str_cell(text: &str) -> String {
+    let trimmed = text.trim();
+    if trimmed.len() < 2 || !trimmed.starts_with('"') || !trimmed.ends_with('"') {
+        return text.to_string();
+    }
+    let mut out = String::with_capacity(text.len() + 2);
+    out.push('"');
+    for c in text.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            other => out.push(other),
+        }
+    }
+    out.push('"');
+    out
 }
 
 impl FmtCell for &[u8] {
@@ -301,6 +325,12 @@ fn unescape(text: &str) -> Result<String, String> {
 }
 
 /// Splits "a, b, c" on top-level commas, respecting brackets and quotes.
+///
+/// A quote only opens a quoted run at the start of an element (or after a
+/// nested `(`/`[`). Anywhere else it is literal text, so the bare string form
+/// accepts `don't` and `a"b` inside a tuple; treating every quote as a
+/// delimiter made those cells fail with "unbalanced quotes" before the element
+/// parser ever saw them.
 fn split_top_level(text: &str) -> Result<Vec<String>, String> {
     let mut elems = Vec::new();
     let mut depth = 0i32;
@@ -308,6 +338,8 @@ fn split_top_level(text: &str) -> Result<Vec<String>, String> {
     let mut in_double = false;
     let mut escaped = false;
     let mut cur = String::new();
+    // Byte offset where the element (or nested element) being built starts.
+    let mut token_start = 0usize;
     for c in text.chars() {
         if escaped {
             cur.push(c);
@@ -319,18 +351,20 @@ fn split_top_level(text: &str) -> Result<Vec<String>, String> {
             escaped = true;
             continue;
         }
+        let at_token_start = cur[token_start..].trim().is_empty();
         match c {
-            '"' if !in_single => {
+            '"' if !in_single && (in_double || at_token_start) => {
                 in_double = !in_double;
                 cur.push(c);
             }
-            '\'' if !in_double => {
+            '\'' if !in_double && (in_single || at_token_start) => {
                 in_single = !in_single;
                 cur.push(c);
             }
             '(' | '[' if !in_single && !in_double => {
                 depth += 1;
                 cur.push(c);
+                token_start = cur.len();
             }
             ')' | ']' if !in_single && !in_double => {
                 depth -= 1;
@@ -339,6 +373,7 @@ fn split_top_level(text: &str) -> Result<Vec<String>, String> {
             ',' if depth == 0 && !in_single && !in_double => {
                 elems.push(cur.clone());
                 cur.clear();
+                token_start = 0;
             }
             _ => cur.push(c),
         }
@@ -473,6 +508,9 @@ fn parse_hex_cell(text: &str) -> Result<Vec<u8>, String> {
     let hex = t
         .strip_prefix("0x")
         .ok_or_else(|| format!("expected 0x-prefixed hex, got '{t}'"))?;
+    if !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(format!("hex value '{hex}' is not all hex digits"));
+    }
     if hex.len() % 2 != 0 {
         return Err(format!("odd-length hex value '{hex}'"));
     }
