@@ -102,14 +102,38 @@ impl_fmt_cell_debug!(
 
 impl FmtCell for &str {
     fn fmt_cell(&self) -> String {
-        self.to_string()
+        fmt_str_cell(self)
     }
 }
 
 impl FmtCell for String {
     fn fmt_cell(&self) -> String {
-        self.clone()
+        fmt_str_cell(self)
     }
+}
+
+/// A scalar string cell prints its text verbatim, with one exception: text that
+/// starts and ends with `"` would be read back as a quoted string, so it is
+/// printed quoted and escaped instead. Without this a no-op save of a stored
+/// `"hello"` rewrites the value to `hello`; for a key it leaves the old row
+/// behind, because `write_rows` removes rows by formatting each key and parsing
+/// it back.
+fn fmt_str_cell(text: &str) -> String {
+    let trimmed = text.trim();
+    if trimmed.len() < 2 || !trimmed.starts_with('"') || !trimmed.ends_with('"') {
+        return text.to_string();
+    }
+    let mut out = String::with_capacity(text.len() + 2);
+    out.push('"');
+    for c in text.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            other => out.push(other),
+        }
+    }
+    out.push('"');
+    out
 }
 
 impl FmtCell for &[u8] {
@@ -118,33 +142,114 @@ impl FmtCell for &[u8] {
     }
 }
 
-impl<A: Debug, B: Debug> FmtCell for (A, B) {
-    fn fmt_cell(&self) -> String {
-        format!("{self:?}")
+/// Renders one element *inside* a tuple value.
+///
+/// A tuple cell is a single text field, so its elements have to be spelled in a
+/// way the tuple parser can split again: a string element stays quoted (a bare
+/// one could contain the `,` separator) and a byte element is `0x` hex, the same
+/// form a standalone byte cell uses. Both spellings are accepted on input, so a
+/// cell copied out of a tuple still parses in a scalar column and vice versa.
+trait FmtElem {
+    fn fmt_elem(&self) -> String;
+}
+
+macro_rules! impl_fmt_elem {
+    ($($t:ty),*) => {
+        $(impl FmtElem for $t {
+            fn fmt_elem(&self) -> String {
+                format!("{self:?}")
+            }
+        })*
+    };
+}
+
+impl_fmt_elem!(
+    u8,
+    u16,
+    u32,
+    u64,
+    u128,
+    i8,
+    i16,
+    i32,
+    i64,
+    i128,
+    f32,
+    f64,
+    bool,
+    char,
+    (),
+    &str,
+    String
+);
+
+impl FmtElem for &[u8] {
+    fn fmt_elem(&self) -> String {
+        bytes_to_hex(self)
     }
 }
 
-impl<A: Debug, B: Debug, C: Debug> FmtCell for (A, B, C) {
-    fn fmt_cell(&self) -> String {
-        format!("{self:?}")
+impl FmtElem for Vec<u8> {
+    fn fmt_elem(&self) -> String {
+        bytes_to_hex(self)
     }
 }
 
-impl<A: Debug, B: Debug, C: Debug, D: Debug> FmtCell for (A, B, C, D) {
+impl<A: FmtElem, B: FmtElem> FmtCell for (A, B) {
     fn fmt_cell(&self) -> String {
-        format!("{self:?}")
+        format!("({}, {})", self.0.fmt_elem(), self.1.fmt_elem())
     }
 }
 
-impl<A: Debug, B: Debug, C: Debug, D: Debug, E: Debug> FmtCell for (A, B, C, D, E) {
+impl<A: FmtElem, B: FmtElem, C: FmtElem> FmtCell for (A, B, C) {
     fn fmt_cell(&self) -> String {
-        format!("{self:?}")
+        format!(
+            "({}, {}, {})",
+            self.0.fmt_elem(),
+            self.1.fmt_elem(),
+            self.2.fmt_elem()
+        )
     }
 }
 
-impl<A: Debug, B: Debug, C: Debug, D: Debug, E: Debug, F: Debug> FmtCell for (A, B, C, D, E, F) {
+impl<A: FmtElem, B: FmtElem, C: FmtElem, D: FmtElem> FmtCell for (A, B, C, D) {
     fn fmt_cell(&self) -> String {
-        format!("{self:?}")
+        format!(
+            "({}, {}, {}, {})",
+            self.0.fmt_elem(),
+            self.1.fmt_elem(),
+            self.2.fmt_elem(),
+            self.3.fmt_elem()
+        )
+    }
+}
+
+impl<A: FmtElem, B: FmtElem, C: FmtElem, D: FmtElem, E: FmtElem> FmtCell for (A, B, C, D, E) {
+    fn fmt_cell(&self) -> String {
+        format!(
+            "({}, {}, {}, {}, {})",
+            self.0.fmt_elem(),
+            self.1.fmt_elem(),
+            self.2.fmt_elem(),
+            self.3.fmt_elem(),
+            self.4.fmt_elem()
+        )
+    }
+}
+
+impl<A: FmtElem, B: FmtElem, C: FmtElem, D: FmtElem, E: FmtElem, F: FmtElem> FmtCell
+    for (A, B, C, D, E, F)
+{
+    fn fmt_cell(&self) -> String {
+        format!(
+            "({}, {}, {}, {}, {}, {})",
+            self.0.fmt_elem(),
+            self.1.fmt_elem(),
+            self.2.fmt_elem(),
+            self.3.fmt_elem(),
+            self.4.fmt_elem(),
+            self.5.fmt_elem()
+        )
     }
 }
 
@@ -220,6 +325,12 @@ fn unescape(text: &str) -> Result<String, String> {
 }
 
 /// Splits "a, b, c" on top-level commas, respecting brackets and quotes.
+///
+/// A quote only opens a quoted run at the start of an element (or after a
+/// nested `(`/`[`). Anywhere else it is literal text, so the bare string form
+/// accepts `don't` and `a"b` inside a tuple; treating every quote as a
+/// delimiter made those cells fail with "unbalanced quotes" before the element
+/// parser ever saw them.
 fn split_top_level(text: &str) -> Result<Vec<String>, String> {
     let mut elems = Vec::new();
     let mut depth = 0i32;
@@ -227,6 +338,8 @@ fn split_top_level(text: &str) -> Result<Vec<String>, String> {
     let mut in_double = false;
     let mut escaped = false;
     let mut cur = String::new();
+    // Byte offset where the element (or nested element) being built starts.
+    let mut token_start = 0usize;
     for c in text.chars() {
         if escaped {
             cur.push(c);
@@ -238,18 +351,20 @@ fn split_top_level(text: &str) -> Result<Vec<String>, String> {
             escaped = true;
             continue;
         }
+        let at_token_start = cur[token_start..].trim().is_empty();
         match c {
-            '"' if !in_single => {
+            '"' if !in_single && (in_double || at_token_start) => {
                 in_double = !in_double;
                 cur.push(c);
             }
-            '\'' if !in_double => {
+            '\'' if !in_double && (in_single || at_token_start) => {
                 in_single = !in_single;
                 cur.push(c);
             }
             '(' | '[' if !in_single && !in_double => {
                 depth += 1;
                 cur.push(c);
+                token_start = cur.len();
             }
             ')' | ']' if !in_single && !in_double => {
                 depth -= 1;
@@ -258,6 +373,7 @@ fn split_top_level(text: &str) -> Result<Vec<String>, String> {
             ',' if depth == 0 && !in_single && !in_double => {
                 elems.push(cur.clone());
                 cur.clear();
+                token_start = 0;
             }
             _ => cur.push(c),
         }
@@ -341,12 +457,34 @@ impl OwnedCell<char> for char {
     }
 }
 
+/// A string cell: quoted text is unquoted (escapes honoured), bare text is kept
+/// verbatim. The quoted form is what a tuple cell shows, so pasting one into a
+/// scalar column stores the string itself instead of storing the quotes.
+fn parse_str_cell(text: &str) -> Result<String, String> {
+    let t = text.trim();
+    if t.len() >= 2 && t.starts_with('"') && t.ends_with('"') {
+        return parse_quoted_str(t);
+    }
+    Ok(text.to_string())
+}
+
+/// A string element inside a tuple: quoted as a tuple cell prints it, bare as a
+/// scalar cell prints it. Quotes are never part of the stored value.
+fn parse_str_elem(text: &str) -> Result<String, String> {
+    let t = text.trim();
+    if t.starts_with('"') {
+        parse_quoted_str(t)
+    } else {
+        Ok(t.to_string())
+    }
+}
+
 impl OwnedCell<&'static str> for String {
     fn parse_cell(text: &str) -> Result<Self, String> {
-        Ok(text.to_string())
+        parse_str_cell(text)
     }
     fn parse_elem(text: &str) -> Result<Self, String> {
-        parse_quoted_str(text)
+        parse_str_elem(text)
     }
     fn as_arg(&self) -> <&'static str as Value>::SelfType<'_> {
         self.as_str()
@@ -355,10 +493,10 @@ impl OwnedCell<&'static str> for String {
 
 impl OwnedCell<String> for String {
     fn parse_cell(text: &str) -> Result<Self, String> {
-        Ok(text.to_string())
+        parse_str_cell(text)
     }
     fn parse_elem(text: &str) -> Result<Self, String> {
-        parse_quoted_str(text)
+        parse_str_elem(text)
     }
     fn as_arg(&self) -> <String as Value>::SelfType<'_> {
         self.clone()
@@ -370,6 +508,9 @@ fn parse_hex_cell(text: &str) -> Result<Vec<u8>, String> {
     let hex = t
         .strip_prefix("0x")
         .ok_or_else(|| format!("expected 0x-prefixed hex, got '{t}'"))?;
+    if !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(format!("hex value '{hex}' is not all hex digits"));
+    }
     if hex.len() % 2 != 0 {
         return Err(format!("odd-length hex value '{hex}'"));
     }
@@ -401,12 +542,27 @@ fn parse_byte_list(text: &str) -> Result<Vec<u8>, String> {
         .collect()
 }
 
+/// A byte cell accepts both spellings it can be printed in: `0x6161` (scalar
+/// cell) and `[97, 97]` (tuple cell).
+fn parse_byte_cell(text: &str) -> Result<Vec<u8>, String> {
+    let t = text.trim();
+    if t.starts_with("0x") {
+        parse_hex_cell(t)
+    } else if t.starts_with('[') {
+        parse_byte_list(t)
+    } else {
+        Err(format!(
+            "expected 0x-prefixed hex or a byte list like [1, 2], got '{t}'"
+        ))
+    }
+}
+
 impl OwnedCell<&'static [u8]> for Vec<u8> {
     fn parse_cell(text: &str) -> Result<Self, String> {
-        parse_hex_cell(text)
+        parse_byte_cell(text)
     }
     fn parse_elem(text: &str) -> Result<Self, String> {
-        parse_byte_list(text)
+        parse_byte_cell(text)
     }
     fn as_arg(&self) -> <&'static [u8] as Value>::SelfType<'_> {
         self.as_slice()
@@ -1333,7 +1489,21 @@ mod tests {
             <String as OC<&'static str>>::parse_elem("\"line\\nbreak\"").unwrap(),
             "line\nbreak"
         );
-        assert!(<String as OC<&'static str>>::parse_elem("no quotes").is_err());
+        // ...and the bare form a scalar cell prints is accepted too, so an
+        // element and a whole cell share one spelling (issue #9).
+        assert_eq!(
+            <String as OC<&'static str>>::parse_elem("no quotes").unwrap(),
+            "no quotes"
+        );
+        // A quoted scalar cell is the same string, without the quotes as data.
+        assert_eq!(
+            <String as OC<&'static str>>::parse_cell("\"a, b\"").unwrap(),
+            "a, b"
+        );
+        assert_eq!(
+            <String as OC<&'static str>>::parse_cell("a, b").unwrap(),
+            "a, b"
+        );
     }
 
     #[test]
